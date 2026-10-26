@@ -12,8 +12,8 @@ A Source Image's pixels are only ever center-cropped and scaled. This applies on
 
 ## Glossary vocabulary
 
-Identifiers, types, test names, UI strings and comments use the terms in `GLOSSARY.md`: Tile, Source Image, Source Library, Target Image, Mosaic, Repeat Radius, Tiles Across. Flag a synonym that a glossary entry lists under _Avoid_ (e.g. `cell`, `reference_image`, `output`). Flag a new domain concept with no glossary entry as a gap.
+Identifiers, types, test names, UI strings and comments use the terms in `GLOSSARY.md`. `scripts/check-glossary-terms.sh` catches the synonyms listed under _Avoid_; flag any other synonym for a glossary term, and flag a new domain concept with no glossary entry as a gap.
 
 ## Tests go through the `mosaic-core` public API
 
-Tests build fixtures (synthetic images in temp folders), call the public API (Build, Persist, Inspect, Viewport, Export) and assert on what it returns. Flag tests that reach into private modules, the cache's on-disk layout, or the internals of the `.mosaic` file other than through Persist.
+Tests build fixtures (synthetic images in temp folders), call the public API (Build, Persist, Inspect, Viewport, Export) and assert on what it returns. Flag tests that reach into private modules or the internals of the `.mosaic` file other than through Persist. A test may treat the analysis cache folder as opaque (overwrite or delete everything in it, as a corrupt or missing cache would), but flag one that names cache entry paths or depends on the entry format.

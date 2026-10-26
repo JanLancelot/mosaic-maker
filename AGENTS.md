@@ -18,7 +18,7 @@ Commit subjects use a Conventional Commits header: `type: summary` with type one
 
 Work lands on `main` through a PR from a branch named with the same types: `type/short-summary`, e.g. `feat/build-and-show-mosaic`. Create the branch before the first commit. A PR's title follows the commit convention, since a squash merge uses it as the subject.
 
-Commit before reviewing: when `/implement` reaches `/code-review`, pass `main` as the fixed point and the ticket as the spec, then commit the fixes it prompts as follow-up commits.
+Commit before reviewing: when `/implement` reaches `/code-review`, run `git fetch` and pass `origin/main` as the fixed point and the ticket as the spec, then commit the fixes it prompts as follow-up commits.
 
 ## Git hooks
 
