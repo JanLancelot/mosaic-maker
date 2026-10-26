@@ -1,9 +1,10 @@
 use std::path::Path;
 
-use image::{Rgb, RgbImage};
+use image::{Rgb, RgbImage, Rgba, RgbaImage};
 use mosaic_core::{
-    BuildError, BuildSettings, CancelToken, Mosaic, Progress, RENDERED_TILE_SIZE, Stage, Tile,
-    build,
+    AnalysisCache, BuildError, BuildSettings, BuildWarning, Built, CancelToken,
+    DEFAULT_REPEAT_RADIUS, Mosaic, Progress, RENDERED_TILE_SIZE, SkipReason, SourceImageId, Stage,
+    Tile, build,
 };
 use tempfile::TempDir;
 
@@ -22,12 +23,25 @@ impl Fixture {
         Fixture { dir }
     }
 
+    fn cache(&self) -> AnalysisCache {
+        AnalysisCache::in_folder(self.dir.path().join("cache"))
+    }
+
     fn source_library(&self) -> std::path::PathBuf {
         self.dir.path().join("library")
     }
 
-    fn add_source_image(&self, file_name: &str, image: &RgbImage) {
-        image.save(self.source_library().join(file_name)).unwrap();
+    /// Saves `image` at `relative_path` in the Source Library, creating folders as needed.
+    fn add_source_image(&self, relative_path: &str, image: &RgbImage) {
+        let path = self.source_library().join(relative_path);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        image.save(path).unwrap();
+    }
+
+    fn add_file(&self, relative_path: &str, contents: &[u8]) {
+        let path = self.source_library().join(relative_path);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, contents).unwrap();
     }
 
     fn set_target_image(&self, image: &RgbImage) -> std::path::PathBuf {
@@ -37,8 +51,24 @@ impl Fixture {
     }
 
     fn build(&self, target_image: &Path, tiles_across: u32) -> Mosaic {
+        self.build_reporting(target_image, tiles_across).mosaic
+    }
+
+    fn build_reporting(&self, target_image: &Path, tiles_across: u32) -> Built {
         self.build_with(target_image, tiles_across, |_| {}, &CancelToken::new())
             .unwrap()
+    }
+
+    fn build_with_settings(&self, target_image: &Path, settings: &BuildSettings) -> Built {
+        build(
+            target_image,
+            &self.source_library(),
+            settings,
+            &self.cache(),
+            |_| {},
+            &CancelToken::new(),
+        )
+        .unwrap()
     }
 
     fn build_with(
@@ -47,11 +77,17 @@ impl Fixture {
         tiles_across: u32,
         on_progress: impl FnMut(Progress),
         cancel: &CancelToken,
-    ) -> Result<Mosaic, BuildError> {
+    ) -> Result<Built, BuildError> {
+        let settings = BuildSettings {
+            tiles_across,
+            repeat_radius: DEFAULT_REPEAT_RADIUS,
+            seed: 0,
+        };
         build(
             target_image,
             &self.source_library(),
-            &BuildSettings { tiles_across },
+            &settings,
+            &self.cache(),
             on_progress,
             cancel,
         )
@@ -65,7 +101,7 @@ fn solid(width: u32, height: u32, color: Rgb<u8>) -> RgbImage {
 fn source_file_name(mosaic: &Mosaic, tile: Tile) -> String {
     let source_image = mosaic.source_image_at(tile).unwrap();
     source_image
-        .path()
+        .last_known_path()
         .file_name()
         .unwrap()
         .to_string_lossy()
@@ -164,6 +200,486 @@ fn source_images_are_center_cropped_to_square_before_matching() {
         "banded.png"
     );
     assert!(mosaic.rendered().pixels().all(|pixel| *pixel == RED));
+}
+
+#[test]
+fn source_images_in_nested_subfolders_are_found_and_located_relative_to_the_source_library() {
+    let fixture = Fixture::new();
+    fixture.add_source_image("blue.png", &solid(8, 8, BLUE));
+    fixture.add_source_image("artists/someone/red.png", &solid(8, 8, RED));
+    let target_image = fixture.set_target_image(&solid(10, 10, RED));
+
+    let mosaic = fixture.build(&target_image, 1);
+
+    let source_image = mosaic.source_image_at(Tile { column: 0, row: 0 }).unwrap();
+    assert_eq!(
+        source_image.last_known_path(),
+        Path::new("artists/someone/red.png")
+    );
+}
+
+/// A 30 × 30 picture with a red 10 × 10 center, surrounded by `around`.
+fn red_center(around: Rgb<u8>) -> RgbImage {
+    RgbImage::from_fn(30, 30, |x, y| {
+        if (10..20).contains(&x) && (10..20).contains(&y) {
+            RED
+        } else {
+            around
+        }
+    })
+}
+
+#[test]
+fn a_source_image_transparent_apart_from_a_red_center_is_shown_as_red_on_white() {
+    let fixture = Fixture::new();
+    // Transparent black: read without its transparency, this would look like the decoy.
+    let transparent = RgbaImage::from_fn(30, 30, |x, y| {
+        let Rgb([r, g, b]) = *red_center(Rgb([0, 0, 0])).get_pixel(x, y);
+        let alpha = if (10..20).contains(&x) && (10..20).contains(&y) {
+            255
+        } else {
+            0
+        };
+        Rgba([r, g, b, alpha])
+    });
+    transparent
+        .save(fixture.source_library().join("transparent.png"))
+        .unwrap();
+    // Sorted first, so it would win a tie.
+    fixture.add_source_image("black_around_red.png", &red_center(Rgb([0, 0, 0])));
+    let target_image = fixture.set_target_image(&red_center(Rgb([255, 255, 255])));
+
+    let mosaic = fixture.build(&target_image, 1);
+
+    assert_eq!(
+        source_file_name(&mosaic, Tile { column: 0, row: 0 }),
+        "transparent.png"
+    );
+    let rendered = mosaic.rendered();
+    let middle = RENDERED_TILE_SIZE / 2;
+    assert_eq!(*rendered.get_pixel(0, 0), Rgb([255, 255, 255]));
+    assert_eq!(*rendered.get_pixel(middle, middle), RED);
+}
+
+/// The opening of a HEIC file: an ISO media `ftyp` box with the `heic` brand.
+const HEIC_HEADER: &[u8] = b"\0\0\0\x18ftypheic\0\0\0\0mif1heic";
+
+fn png_bytes(image: &RgbImage) -> Vec<u8> {
+    let mut bytes = std::io::Cursor::new(Vec::new());
+    image.write_to(&mut bytes, image::ImageFormat::Png).unwrap();
+    bytes.into_inner()
+}
+
+#[test]
+fn heic_non_image_and_corrupt_files_are_skipped_each_with_a_reason() {
+    let fixture = Fixture::new();
+    fixture.add_source_image("red.png", &solid(8, 8, RED));
+    fixture.add_file("phone/holiday.heic", HEIC_HEADER);
+    fixture.add_file("notes.txt", b"not a picture");
+    let png = png_bytes(&solid(64, 64, BLUE));
+    fixture.add_file("broken.png", &png[..png.len() / 2]);
+    let target_image = fixture.set_target_image(&solid(10, 10, RED));
+
+    let built = fixture.build_reporting(&target_image, 1);
+
+    let mut skipped: Vec<_> = built
+        .report
+        .warnings
+        .iter()
+        .map(|warning| match warning {
+            BuildWarning::SkippedFile { path, reason } => (path.to_str().unwrap(), reason),
+            other => panic!("unexpected warning {other:?}"),
+        })
+        .collect();
+    skipped.sort_by_key(|(path, _)| *path);
+    assert!(
+        matches!(
+            skipped[..],
+            [
+                ("broken.png", SkipReason::Corrupt(_)),
+                ("notes.txt", SkipReason::NotAnImage),
+                ("phone/holiday.heic", SkipReason::Heic),
+            ]
+        ),
+        "{skipped:?}"
+    );
+    assert_eq!(built.report.stats.source_images, 1);
+}
+
+#[cfg(unix)]
+#[test]
+fn a_linked_folder_is_skipped_with_a_reason_rather_than_followed() {
+    let fixture = Fixture::new();
+    fixture.add_source_image("red.png", &solid(8, 8, RED));
+    // Linking back to the Source Library itself would loop forever if followed.
+    std::os::unix::fs::symlink(
+        fixture.source_library(),
+        fixture.source_library().join("loop"),
+    )
+    .unwrap();
+    let target_image = fixture.set_target_image(&solid(10, 10, RED));
+
+    let built = fixture.build_reporting(&target_image, 1);
+
+    assert!(
+        matches!(
+            &built.report.warnings[..],
+            [BuildWarning::SkippedFile {
+                path,
+                reason: SkipReason::LinkedFolder,
+            }] if path == Path::new("loop")
+        ),
+        "{:?}",
+        built.report.warnings
+    );
+}
+
+#[test]
+fn hidden_files_are_left_out_without_a_warning() {
+    let fixture = Fixture::new();
+    fixture.add_source_image("red.png", &solid(8, 8, RED));
+    fixture.add_file(".DS_Store", b"Finder's folder settings");
+    fixture.add_source_image(".thumbnails/blue.png", &solid(8, 8, BLUE));
+    let target_image = fixture.set_target_image(&solid(10, 10, BLUE));
+
+    let built = fixture.build_reporting(&target_image, 1);
+
+    assert_eq!(built.report.warnings, []);
+    assert_eq!(built.report.stats.source_images, 1);
+}
+
+const TOP_LEFT: Tile = Tile { column: 0, row: 0 };
+
+#[test]
+fn byte_identical_files_at_different_paths_are_one_source_image() {
+    let fixture = Fixture::new();
+    fixture.add_source_image("red.png", &solid(8, 8, RED));
+    fixture.add_source_image("copies/red.png", &solid(8, 8, RED));
+    let target_image = fixture.set_target_image(&solid(10, 10, RED));
+
+    let built = fixture.build_reporting(&target_image, 1);
+
+    assert_eq!(built.report.stats.source_images, 1);
+}
+
+#[test]
+fn a_renamed_file_keeps_its_identity() {
+    let fixture = Fixture::new();
+    fixture.add_source_image("red.png", &solid(8, 8, RED));
+    let target_image = fixture.set_target_image(&solid(10, 10, RED));
+    let before = fixture.build(&target_image, 1);
+
+    std::fs::create_dir(fixture.source_library().join("moved")).unwrap();
+    std::fs::rename(
+        fixture.source_library().join("red.png"),
+        fixture.source_library().join("moved/renamed.png"),
+    )
+    .unwrap();
+    let after = fixture.build(&target_image, 1);
+
+    let (before, after) = (
+        before.source_image_at(TOP_LEFT).unwrap(),
+        after.source_image_at(TOP_LEFT).unwrap(),
+    );
+    assert_eq!(before.id(), after.id());
+    assert_eq!(after.last_known_path(), Path::new("moved/renamed.png"));
+}
+
+#[test]
+fn an_edited_file_gets_a_new_identity() {
+    let fixture = Fixture::new();
+    fixture.add_source_image("red.png", &solid(8, 8, RED));
+    let target_image = fixture.set_target_image(&solid(10, 10, RED));
+    let before = fixture.build(&target_image, 1);
+
+    let mut edited = solid(8, 8, RED);
+    edited.put_pixel(0, 0, Rgb([254, 0, 0]));
+    fixture.add_source_image("red.png", &edited);
+    let after = fixture.build(&target_image, 1);
+
+    assert_ne!(
+        before.source_image_at(TOP_LEFT).unwrap().id(),
+        after.source_image_at(TOP_LEFT).unwrap().id()
+    );
+}
+
+/// Every file under `folder` with its contents, so any write inside it shows up.
+fn snapshot(folder: &Path) -> Vec<(std::path::PathBuf, Vec<u8>)> {
+    let mut files = Vec::new();
+    let mut folders = vec![folder.to_owned()];
+    while let Some(folder) = folders.pop() {
+        for entry in std::fs::read_dir(folder).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                folders.push(path);
+            } else {
+                files.push((path.clone(), std::fs::read(path).unwrap()));
+            }
+        }
+    }
+    files.sort();
+    files
+}
+
+#[test]
+fn a_second_build_reuses_the_cached_analysis_and_builds_the_same_mosaic() {
+    let fixture = Fixture::new();
+    fixture.add_source_image("red.png", &solid(8, 8, RED));
+    fixture.add_source_image("nested/blue.png", &solid(8, 8, BLUE));
+    let target = RgbImage::from_fn(20, 10, |x, _| if x < 10 { RED } else { BLUE });
+    let target_image = fixture.set_target_image(&target);
+
+    let first = fixture.build_reporting(&target_image, 2);
+    let second = fixture.build_reporting(&target_image, 2);
+
+    assert_eq!(first.report.stats.cache_hits, 0);
+    assert_eq!(second.report.stats.cache_hits, 2);
+    assert_eq!(second.mosaic.rendered(), first.mosaic.rendered());
+}
+
+#[test]
+fn a_build_writes_nothing_inside_the_source_library() {
+    let fixture = Fixture::new();
+    fixture.add_source_image("red.png", &solid(8, 8, RED));
+    fixture.add_source_image("nested/blue.png", &solid(8, 8, BLUE));
+    fixture.add_file("notes.txt", b"not a picture");
+    let target_image = fixture.set_target_image(&solid(10, 10, RED));
+    let before = snapshot(&fixture.source_library());
+
+    fixture.build(&target_image, 1);
+    fixture.build(&target_image, 1);
+
+    assert_eq!(snapshot(&fixture.source_library()), before);
+}
+
+#[test]
+fn a_cache_folder_inside_the_source_library_is_never_written() {
+    let fixture = Fixture::new();
+    fixture.add_source_image("red.png", &solid(8, 8, RED));
+    let target_image = fixture.set_target_image(&solid(10, 10, RED));
+    let before = snapshot(&fixture.source_library());
+    let settings = BuildSettings {
+        tiles_across: 1,
+        repeat_radius: DEFAULT_REPEAT_RADIUS,
+        seed: 0,
+    };
+    let cache = AnalysisCache::in_folder(fixture.source_library().join("nested/cache"));
+
+    for _ in 0..2 {
+        build(
+            &target_image,
+            &fixture.source_library(),
+            &settings,
+            &cache,
+            |_| {},
+            &CancelToken::new(),
+        )
+        .unwrap();
+    }
+
+    assert_eq!(snapshot(&fixture.source_library()), before);
+}
+
+#[test]
+fn a_corrupt_cache_entry_is_recomputed_rather_than_failing_the_build() {
+    let fixture = Fixture::new();
+    fixture.add_source_image("red.png", &solid(8, 8, RED));
+    fixture.add_source_image("blue.png", &solid(8, 8, BLUE));
+    let target = RgbImage::from_fn(20, 10, |x, _| if x < 10 { RED } else { BLUE });
+    let target_image = fixture.set_target_image(&target);
+    let first = fixture.build_reporting(&target_image, 2);
+
+    let cached = snapshot(fixture.dir.path().join("cache").as_path());
+    assert!(!cached.is_empty(), "the first build cached nothing");
+    for (path, contents) in cached {
+        std::fs::write(&path, &contents[..contents.len() / 2]).unwrap();
+    }
+    let second = fixture.build_reporting(&target_image, 2);
+    let third = fixture.build_reporting(&target_image, 2);
+
+    assert_eq!(second.report.stats.cache_hits, 0);
+    assert_eq!(second.mosaic.rendered(), first.mosaic.rendered());
+    assert_eq!(third.report.stats.cache_hits, 2);
+}
+
+/// Adds `count` slightly different shades of red to the Source Library.
+fn add_reds(fixture: &Fixture, count: u8) {
+    for i in 0..count {
+        fixture.add_source_image(
+            &format!("red_{i:02}.png"),
+            &solid(4, 4, Rgb([255 - i, i, 0])),
+        );
+    }
+}
+
+/// Every Tile of `mosaic`, row by row.
+fn tiles(mosaic: &Mosaic) -> Vec<Tile> {
+    (0..mosaic.rows())
+        .flat_map(|row| (0..mosaic.tiles_across()).map(move |column| Tile { column, row }))
+        .collect()
+}
+
+/// How many Tiles apart `a` and `b` are, counting diagonal steps as one.
+fn chebyshev_distance(a: Tile, b: Tile) -> u32 {
+    a.column.abs_diff(b.column).max(a.row.abs_diff(b.row))
+}
+
+/// Pairs of distinct Tiles within `radius` of each other that the same Source Image fills.
+fn repeats_within(mosaic: &Mosaic, radius: u32) -> Vec<(Tile, Tile)> {
+    let tiles = tiles(mosaic);
+    let id = |tile| mosaic.source_image_at(tile).unwrap().id();
+    let mut repeats = Vec::new();
+    for (i, &a) in tiles.iter().enumerate() {
+        for &b in &tiles[i + 1..] {
+            if chebyshev_distance(a, b) <= radius && id(a) == id(b) {
+                repeats.push((a, b));
+            }
+        }
+    }
+    repeats
+}
+
+#[test]
+fn with_a_big_enough_source_library_no_source_image_repeats_within_the_repeat_radius() {
+    let fixture = Fixture::new();
+    // Each Tile has at most 24 others within a radius of 2, so 25 Source Images always suffice.
+    add_reds(&fixture, 25);
+    let target_image = fixture.set_target_image(&solid(60, 60, RED));
+    let settings = BuildSettings {
+        tiles_across: 6,
+        repeat_radius: 2,
+        seed: 1,
+    };
+
+    let built = fixture.build_with_settings(&target_image, &settings);
+
+    assert_eq!(repeats_within(&built.mosaic, 2), []);
+    assert_eq!(built.report.warnings, []);
+}
+
+/// The Repeat Radius each Tile was filled with, given the radius asked for.
+fn repeat_radius_used(built: &Built, asked: u32, tile: Tile) -> u32 {
+    built
+        .report
+        .warnings
+        .iter()
+        .find_map(|warning| match warning {
+            BuildWarning::RepeatRadiusRelaxed {
+                tile: relaxed,
+                repeat_radius,
+            } if *relaxed == tile => Some(*repeat_radius),
+            _ => None,
+        })
+        .unwrap_or(asked)
+}
+
+#[test]
+fn with_one_source_image_every_tile_but_the_first_filled_relaxes_the_repeat_radius_to_0() {
+    let fixture = Fixture::new();
+    fixture.add_source_image("red.png", &solid(8, 8, RED));
+    let target_image = fixture.set_target_image(&solid(20, 20, RED));
+    let settings = BuildSettings {
+        tiles_across: 2,
+        repeat_radius: 1,
+        seed: 0,
+    };
+
+    let built = fixture.build_with_settings(&target_image, &settings);
+
+    let relaxed_to: Vec<u32> = built
+        .report
+        .warnings
+        .iter()
+        .map(|warning| match warning {
+            BuildWarning::RepeatRadiusRelaxed { repeat_radius, .. } => *repeat_radius,
+            other => panic!("unexpected warning {other:?}"),
+        })
+        .collect();
+    assert_eq!(relaxed_to, [0, 0, 0]);
+}
+
+#[test]
+fn with_a_too_small_source_library_the_repeat_radius_is_relaxed_only_where_needed() {
+    let fixture = Fixture::new();
+    add_reds(&fixture, 4);
+    let target_image = fixture.set_target_image(&solid(50, 50, RED));
+    let settings = BuildSettings {
+        tiles_across: 5,
+        repeat_radius: 3,
+        seed: 0,
+    };
+
+    let built = fixture.build_with_settings(&target_image, &settings);
+
+    let tile_count = tiles(&built.mosaic).len();
+    let relaxed = built.report.warnings.len();
+    assert!(
+        relaxed > 0 && relaxed < tile_count,
+        "{relaxed} Tiles relaxed"
+    );
+    // The radius shrinks a step at a time, so it isn't simply dropped wherever it is in the way.
+    assert!(
+        tiles(&built.mosaic)
+            .into_iter()
+            .any(|tile| (1..3).contains(&repeat_radius_used(&built, 3, tile))),
+        "{:?}",
+        built.report.warnings
+    );
+    // Of two Tiles sharing a Source Image, the one filled later must have been allowed to.
+    for (a, b) in repeats_within(&built.mosaic, 3) {
+        let distance = chebyshev_distance(a, b);
+        let allowed = repeat_radius_used(&built, 3, a).min(repeat_radius_used(&built, 3, b));
+        assert!(allowed < distance, "{a:?} and {b:?} repeat");
+    }
+}
+
+/// The Source Image filling every Tile, row by row.
+fn mapping(mosaic: &Mosaic) -> Vec<SourceImageId> {
+    tiles(mosaic)
+        .into_iter()
+        .map(|tile| mosaic.source_image_at(tile).unwrap().id())
+        .collect()
+}
+
+fn seeded(seed: u64) -> BuildSettings {
+    BuildSettings {
+        tiles_across: 8,
+        repeat_radius: 1,
+        seed,
+    }
+}
+
+#[test]
+fn the_same_seed_gives_an_identical_mapping() {
+    let fixture = Fixture::new();
+    add_reds(&fixture, 40);
+    let target_image = fixture.set_target_image(&horizontal_gradient(80, 80, 0, 255));
+
+    let first = fixture.build_with_settings(&target_image, &seeded(7));
+    let second = fixture.build_with_settings(&target_image, &seeded(7));
+
+    assert_eq!(mapping(&first.mosaic), mapping(&second.mosaic));
+}
+
+#[test]
+fn different_seeds_give_different_mappings() {
+    let fixture = Fixture::new();
+    add_reds(&fixture, 12);
+    let target_image = fixture.set_target_image(&solid(80, 80, RED));
+
+    let mappings: Vec<_> = (1..=3)
+        .map(|seed| {
+            mapping(
+                &fixture
+                    .build_with_settings(&target_image, &seeded(seed))
+                    .mosaic,
+            )
+        })
+        .collect();
+
+    assert_ne!(mappings[0], mappings[1]);
+    assert_ne!(mappings[0], mappings[2]);
+    assert_ne!(mappings[1], mappings[2]);
 }
 
 #[test]

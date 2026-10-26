@@ -1,3 +1,4 @@
+use std::fmt;
 use std::path::{Path, PathBuf};
 
 use image::RgbImage;
@@ -12,20 +13,49 @@ pub struct Tile {
     pub row: u32,
 }
 
+/// What identifies a Source Image: a hash of its file's contents (ADR 0003). Byte-identical
+/// files share one; any change to the bytes gives a new one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct SourceImageId([u8; 32]);
+
+impl SourceImageId {
+    pub(crate) fn of_contents(bytes: &[u8]) -> Self {
+        Self(*blake3::hash(bytes).as_bytes())
+    }
+
+    pub(crate) fn as_bytes(&self) -> &[u8; 32] {
+        &self.0
+    }
+}
+
+impl fmt::Display for SourceImageId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.iter().try_for_each(|byte| write!(f, "{byte:02x}"))
+    }
+}
+
 /// One picture from the Source Library that fills Tiles in a Mosaic.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SourceImage {
-    path: PathBuf,
+    id: SourceImageId,
+    last_known_path: PathBuf,
 }
 
 impl SourceImage {
-    pub(crate) fn new(path: PathBuf) -> Self {
-        Self { path }
+    pub(crate) fn new(id: SourceImageId, last_known_path: PathBuf) -> Self {
+        Self {
+            id,
+            last_known_path,
+        }
     }
 
-    /// Where the Source Image's file was found.
-    pub fn path(&self) -> &Path {
-        &self.path
+    pub fn id(&self) -> SourceImageId {
+        self.id
+    }
+
+    /// Where the Source Image's file was last found, relative to the Source Library.
+    pub fn last_known_path(&self) -> &Path {
+        &self.last_known_path
     }
 }
 

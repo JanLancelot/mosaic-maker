@@ -71,6 +71,31 @@ impl ColorSignature {
         }))
     }
 
+    /// The number of bytes in [`ColorSignature::to_bytes`].
+    pub(crate) const BYTE_LENGTH: usize = GRID * GRID * 3 * 4;
+
+    /// The Color Signature as little-endian floats, for the analysis cache.
+    pub(crate) fn to_bytes(&self) -> Vec<u8> {
+        self.0
+            .iter()
+            .flat_map(|lab| [lab.l, lab.a, lab.b])
+            .flat_map(f32::to_le_bytes)
+            .collect()
+    }
+
+    /// Reads back [`ColorSignature::to_bytes`], or `None` if `bytes` is the wrong length.
+    pub(crate) fn from_bytes(bytes: &[u8]) -> Option<Self> {
+        if bytes.len() != Self::BYTE_LENGTH {
+            return None;
+        }
+        let float = |i: usize| f32::from_le_bytes(bytes[i * 4..i * 4 + 4].try_into().unwrap());
+        Some(ColorSignature(std::array::from_fn(|i| Lab {
+            l: float(i * 3),
+            a: float(i * 3 + 1),
+            b: float(i * 3 + 2),
+        })))
+    }
+
     /// How different two Color Signatures look: the sum of the perceptual distances between
     /// their corresponding parts.
     pub(crate) fn distance(&self, other: &ColorSignature) -> f32 {
