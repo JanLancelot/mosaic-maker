@@ -3,7 +3,7 @@
 # Fails unless the subject has a Conventional Commits header (see AGENTS.md).
 # Merge commits are exempt.
 subject="$1"
-types='feat|fix|docs|test|refactor|chore|ci|build|perf'
+types=$(cat "$(dirname "$0")/conventional-types")
 
 case "$subject" in
 Merge\ *) exit 0 ;;

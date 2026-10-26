@@ -1,7 +1,9 @@
 name: CI
 
 on:
+  # Branches are checked through their PRs, so pushes only need checking on main.
   push:
+    branches: [main]
   pull_request:
 
 jobs:
@@ -25,7 +27,7 @@ jobs:
             exit 1
           fi
 
-  commit-subjects:
+  conventions:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -43,8 +45,15 @@ jobs:
           elif git cat-file -e "$PUSH_BEFORE^{commit}" 2>/dev/null; then
             range="$PUSH_BEFORE..$PUSH_AFTER"
           else
-            # A new branch, or a force push from a commit we can't see: check everything.
+            # A force push from a commit we can't see: check everything.
             range="$PUSH_AFTER"
           fi
           echo "Checking $range"
           scripts/check-commit-range.sh "$range"
+      - name: Branch name is type/short-summary
+        if: github.event_name == 'pull_request'
+        env:
+          BRANCH: ${{ github.head_ref }}
+        run: scripts/check-branch-name.sh "$BRANCH"
+      - name: Code uses glossary terms
+        run: scripts/check-glossary-terms.sh
