@@ -1,31 +1,32 @@
 use std::io::Cursor;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use image::imageops::{self, FilterType};
 use image::{DynamicImage, ImageError, ImageReader, Rgb, RgbImage};
 
 use crate::cache::AnalysisCache;
 use crate::color_signature::ColorSignature;
-use crate::mosaic::{RENDERED_TILE_SIZE, SourceImage, SourceImageId};
+use crate::mosaic::{SourceImageId, THUMBNAIL_SIZE};
 use crate::warning::SkipReason;
 
-/// What the build needs to know about a Source Image's pixels.
+/// What matching needs to know about a Source Image's pixels.
 pub(crate) struct Analysis {
     pub(crate) color_signature: ColorSignature,
-    /// The center-cropped Source Image scaled to `RENDERED_TILE_SIZE`.
-    pub(crate) rendered_source_image: RgbImage,
 }
 
 /// A Source Image together with its analysis.
 pub(crate) struct AnalysedSourceImage {
-    pub(crate) source_image: SourceImage,
+    pub(crate) id: SourceImageId,
+    /// Where the Source Image's file was found, relative to the Source Library.
+    pub(crate) last_known_path: PathBuf,
     pub(crate) analysis: Analysis,
     /// Whether `analysis` was read from the [`AnalysisCache`] rather than computed.
     pub(crate) from_cache: bool,
 }
 
 /// Reads the file at `relative_path` in `source_library` and analyses it, or reuses its
-/// analysis from `cache`, or says why it can't be a Source Image.
+/// analysis from `cache`, or says why it can't be a Source Image. A fresh analysis also
+/// leaves the Source Image's Thumbnail in `cache`, while the file is decoded anyway.
 pub(crate) fn analyse_file(
     source_library: &Path,
     relative_path: &Path,
@@ -34,21 +35,73 @@ pub(crate) fn analyse_file(
     let bytes = std::fs::read(source_library.join(relative_path))
         .map_err(|error| SkipReason::Unreadable(error.to_string()))?;
     let id = SourceImageId::of_contents(&bytes);
-    let source_image = SourceImage::new(id, relative_path.to_owned());
+    let last_known_path = relative_path.to_owned();
     if let Some(analysis) = cache.load(id) {
         return Ok(AnalysedSourceImage {
-            source_image,
+            id,
+            last_known_path,
             analysis,
             from_cache: true,
         });
     }
-    let analysis = analyse(&decode(&bytes)?);
+    let cropped = center_square(&decode(&bytes)?);
+    let side = f64::from(cropped.width());
+    let analysis = Analysis {
+        color_signature: ColorSignature::of_square(&cropped, 0.0, 0.0, side),
+    };
     cache.store(id, &analysis);
+    cache.store_thumbnail(id, &scaled_to_thumbnail(&cropped));
     Ok(AnalysedSourceImage {
-        source_image,
+        id,
+        last_known_path,
         analysis,
         from_cache: false,
     })
+}
+
+/// The Thumbnail of the Source Image `id`, last found at `relative_path` in
+/// `source_library`: from `cache`, or made afresh from the file and kept in `cache`. `None` if
+/// the file no longer holds that Source Image.
+pub(crate) fn thumbnail(
+    source_library: &Path,
+    relative_path: &Path,
+    id: SourceImageId,
+    cache: &AnalysisCache,
+) -> Option<RgbImage> {
+    if let Some(thumbnail) = cache.load_thumbnail(id) {
+        return Some(thumbnail);
+    }
+    let bytes = read_if_still(&source_library.join(relative_path), id)?;
+    let thumbnail = scaled_to_thumbnail(&center_square(&decode(&bytes).ok()?));
+    cache.store_thumbnail(id, &thumbnail);
+    Some(thumbnail)
+}
+
+/// The Original of the Source Image `id`, last found at `path`, scaled down to fit within
+/// `max_side` pixels square, or `None` if it is unreachable. Unlike a Thumbnail it is not
+/// cropped.
+pub(crate) fn original(path: &Path, id: SourceImageId, max_side: u32) -> Option<RgbImage> {
+    let image = decode(&read_if_still(path, id)?).ok()?;
+    let (width, height) = image.dimensions();
+    let longest = width.max(height);
+    if longest <= max_side {
+        return Some(image);
+    }
+    let fit =
+        |side: u32| ((u64::from(side) * u64::from(max_side) / u64::from(longest)) as u32).max(1);
+    Some(imageops::resize(
+        &image,
+        fit(width),
+        fit(height),
+        FilterType::Lanczos3,
+    ))
+}
+
+/// The contents of the file at `path`, if it can be read and still holds the Source Image
+/// `id`.
+fn read_if_still(path: &Path, id: SourceImageId) -> Option<Vec<u8>> {
+    let bytes = std::fs::read(path).ok()?;
+    (SourceImageId::of_contents(&bytes) == id).then_some(bytes)
 }
 
 /// Decodes a JPEG, PNG or WebP file, with any transparency shown on white (ADR 0002).
@@ -95,18 +148,14 @@ fn is_heic(bytes: &[u8]) -> bool {
     bytes.len() >= 12 && &bytes[4..8] == b"ftyp" && BRANDS.iter().any(|b| &bytes[8..12] == *b)
 }
 
-fn analyse(image: &RgbImage) -> Analysis {
+/// The largest square at the center of `image`.
+fn center_square(image: &RgbImage) -> RgbImage {
     let (width, height) = image.dimensions();
     let side = width.min(height);
     let (left, top) = ((width - side) / 2, (height - side) / 2);
-    let cropped = imageops::crop_imm(image, left, top, side, side).to_image();
-    Analysis {
-        color_signature: ColorSignature::of_square(&cropped, 0.0, 0.0, f64::from(side)),
-        rendered_source_image: imageops::resize(
-            &cropped,
-            RENDERED_TILE_SIZE,
-            RENDERED_TILE_SIZE,
-            FilterType::Lanczos3,
-        ),
-    }
+    imageops::crop_imm(image, left, top, side, side).to_image()
+}
+
+fn scaled_to_thumbnail(square: &RgbImage) -> RgbImage {
+    imageops::resize(square, THUMBNAIL_SIZE, THUMBNAIL_SIZE, FilterType::Lanczos3)
 }

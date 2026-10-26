@@ -1,102 +1,14 @@
+mod common;
+
 use std::path::Path;
 
+use common::{BLUE, Fixture, GREEN, RED, solid, tiles};
 use image::{Rgb, RgbImage, Rgba, RgbaImage};
 use mosaic_core::{
     AnalysisCache, BuildError, BuildSettings, BuildWarning, Built, CancelToken,
-    DEFAULT_REPEAT_RADIUS, Mosaic, Progress, RENDERED_TILE_SIZE, SkipReason, SourceImageId, Stage,
-    Tile, build,
+    DEFAULT_REPEAT_RADIUS, Mosaic, RENDERED_TILE_SIZE, SkipReason, SourceImageId, Stage, Tile,
+    build,
 };
-use tempfile::TempDir;
-
-const RED: Rgb<u8> = Rgb([255, 0, 0]);
-const GREEN: Rgb<u8> = Rgb([0, 255, 0]);
-const BLUE: Rgb<u8> = Rgb([0, 0, 255]);
-
-struct Fixture {
-    dir: TempDir,
-}
-
-impl Fixture {
-    fn new() -> Self {
-        let dir = TempDir::new().unwrap();
-        std::fs::create_dir(dir.path().join("library")).unwrap();
-        Fixture { dir }
-    }
-
-    fn cache(&self) -> AnalysisCache {
-        AnalysisCache::in_folder(self.dir.path().join("cache"))
-    }
-
-    fn source_library(&self) -> std::path::PathBuf {
-        self.dir.path().join("library")
-    }
-
-    /// Saves `image` at `relative_path` in the Source Library, creating folders as needed.
-    fn add_source_image(&self, relative_path: &str, image: &RgbImage) {
-        let path = self.source_library().join(relative_path);
-        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-        image.save(path).unwrap();
-    }
-
-    fn add_file(&self, relative_path: &str, contents: &[u8]) {
-        let path = self.source_library().join(relative_path);
-        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-        std::fs::write(path, contents).unwrap();
-    }
-
-    fn set_target_image(&self, image: &RgbImage) -> std::path::PathBuf {
-        let path = self.dir.path().join("target.png");
-        image.save(&path).unwrap();
-        path
-    }
-
-    fn build(&self, target_image: &Path, tiles_across: u32) -> Mosaic {
-        self.build_reporting(target_image, tiles_across).mosaic
-    }
-
-    fn build_reporting(&self, target_image: &Path, tiles_across: u32) -> Built {
-        self.build_with(target_image, tiles_across, |_| {}, &CancelToken::new())
-            .unwrap()
-    }
-
-    fn build_with_settings(&self, target_image: &Path, settings: &BuildSettings) -> Built {
-        build(
-            target_image,
-            &self.source_library(),
-            settings,
-            &self.cache(),
-            |_| {},
-            &CancelToken::new(),
-        )
-        .unwrap()
-    }
-
-    fn build_with(
-        &self,
-        target_image: &Path,
-        tiles_across: u32,
-        on_progress: impl FnMut(Progress),
-        cancel: &CancelToken,
-    ) -> Result<Built, BuildError> {
-        let settings = BuildSettings {
-            tiles_across,
-            repeat_radius: DEFAULT_REPEAT_RADIUS,
-            seed: 0,
-        };
-        build(
-            target_image,
-            &self.source_library(),
-            &settings,
-            &self.cache(),
-            on_progress,
-            cancel,
-        )
-    }
-}
-
-fn solid(width: u32, height: u32, color: Rgb<u8>) -> RgbImage {
-    RgbImage::from_pixel(width, height, color)
-}
 
 fn source_file_name(mosaic: &Mosaic, tile: Tile) -> String {
     let source_image = mosaic.source_image_at(tile).unwrap();
@@ -489,7 +401,7 @@ fn a_corrupt_cache_entry_is_recomputed_rather_than_failing_the_build() {
     let target_image = fixture.set_target_image(&target);
     let first = fixture.build_reporting(&target_image, 2);
 
-    let cached = snapshot(fixture.dir.path().join("cache").as_path());
+    let cached = snapshot(&fixture.cache_folder());
     assert!(!cached.is_empty(), "the first build cached nothing");
     for (path, contents) in cached {
         std::fs::write(&path, &contents[..contents.len() / 2]).unwrap();
@@ -510,13 +422,6 @@ fn add_reds(fixture: &Fixture, count: u8) {
             &solid(4, 4, Rgb([255 - i, i, 0])),
         );
     }
-}
-
-/// Every Tile of `mosaic`, row by row.
-fn tiles(mosaic: &Mosaic) -> Vec<Tile> {
-    (0..mosaic.rows())
-        .flat_map(|row| (0..mosaic.tiles_across()).map(move |column| Tile { column, row }))
-        .collect()
 }
 
 /// How many Tiles apart `a` and `b` are, counting diagonal steps as one.

@@ -12,6 +12,14 @@ _Avoid_: Input image, base image
 One picture from the Source Library that can fill Tiles in a Mosaic. It is identified by its contents, not its file location, so the same picture stored twice is one Source Image. It always appears unaltered (cropped, never tinted).
 _Avoid_: Reference image, tile image, photo
 
+**Original**:
+The file holding a Source Image, at the place in the Source Library where it was last found. Once that file is moved, renamed, edited or deleted, the Original is unreachable.
+_Avoid_: Full-resolution image
+
+**Thumbnail**:
+A small square copy of a Source Image, center-cropped as it appears in its Tiles, kept with the Mosaic so the Source Image can still be shown when its Original is unreachable.
+_Avoid_: Preview, icon
+
 **Source Library**:
 The folder of Source Images a Mosaic is built from, including its subfolders. Hidden files and folders are not part of it.
 _Avoid_: Reference folder, image pool
