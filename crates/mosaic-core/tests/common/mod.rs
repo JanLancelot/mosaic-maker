@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use image::{Rgb, RgbImage};
 use mosaic_core::{
     AnalysisCache, BuildError, BuildSettings, Built, CancelToken, DEFAULT_REPEAT_RADIUS, Mosaic,
-    Progress, build,
+    Progress, Tile, build,
 };
 use tempfile::TempDir;
 
@@ -16,7 +16,7 @@ pub const GREEN: Rgb<u8> = Rgb([0, 255, 0]);
 pub const BLUE: Rgb<u8> = Rgb([0, 0, 255]);
 
 pub struct Fixture {
-    pub dir: TempDir,
+    dir: TempDir,
 }
 
 impl Fixture {
@@ -27,7 +27,12 @@ impl Fixture {
     }
 
     pub fn cache(&self) -> AnalysisCache {
-        AnalysisCache::in_folder(self.dir.path().join("cache"))
+        AnalysisCache::in_folder(self.cache_folder())
+    }
+
+    /// The folder `cache` keeps its entries in.
+    pub fn cache_folder(&self) -> PathBuf {
+        self.dir.path().join("cache")
     }
 
     pub fn source_library(&self) -> PathBuf {
@@ -99,4 +104,11 @@ impl Fixture {
 
 pub fn solid(width: u32, height: u32, color: Rgb<u8>) -> RgbImage {
     RgbImage::from_pixel(width, height, color)
+}
+
+/// Every Tile of `mosaic`, row by row.
+pub fn tiles(mosaic: &Mosaic) -> Vec<Tile> {
+    (0..mosaic.rows())
+        .flat_map(|row| (0..mosaic.tiles_across()).map(move |column| Tile { column, row }))
+        .collect()
 }

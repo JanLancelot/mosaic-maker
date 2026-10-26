@@ -2,7 +2,7 @@ mod common;
 
 use std::path::Path;
 
-use common::{BLUE, Fixture, GREEN, RED, solid};
+use common::{BLUE, Fixture, GREEN, RED, solid, tiles};
 use image::{Rgb, RgbImage, Rgba, RgbaImage};
 use mosaic_core::{
     AnalysisCache, BuildError, BuildSettings, BuildWarning, Built, CancelToken,
@@ -401,7 +401,7 @@ fn a_corrupt_cache_entry_is_recomputed_rather_than_failing_the_build() {
     let target_image = fixture.set_target_image(&target);
     let first = fixture.build_reporting(&target_image, 2);
 
-    let cached = snapshot(fixture.dir.path().join("cache").as_path());
+    let cached = snapshot(&fixture.cache_folder());
     assert!(!cached.is_empty(), "the first build cached nothing");
     for (path, contents) in cached {
         std::fs::write(&path, &contents[..contents.len() / 2]).unwrap();
@@ -422,13 +422,6 @@ fn add_reds(fixture: &Fixture, count: u8) {
             &solid(4, 4, Rgb([255 - i, i, 0])),
         );
     }
-}
-
-/// Every Tile of `mosaic`, row by row.
-fn tiles(mosaic: &Mosaic) -> Vec<Tile> {
-    (0..mosaic.rows())
-        .flat_map(|row| (0..mosaic.tiles_across()).map(move |column| Tile { column, row }))
-        .collect()
 }
 
 /// How many Tiles apart `a` and `b` are, counting diagonal steps as one.

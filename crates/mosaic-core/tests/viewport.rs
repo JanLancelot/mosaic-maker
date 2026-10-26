@@ -1,6 +1,6 @@
 mod common;
 
-use common::{Fixture, RED, solid};
+use common::{Fixture, RED, solid, tiles};
 use mosaic_core::{Mosaic, ScreenPoint, ScreenRect, Tile, Viewport};
 
 /// A Mosaic 4 Tiles Across by 3 rows.
@@ -20,13 +20,6 @@ fn screen() -> ScreenRect {
         min: point(100.0, 50.0),
         max: point(900.0, 650.0),
     }
-}
-
-/// Every Tile of `mosaic`, row by row.
-fn tiles(mosaic: &Mosaic) -> Vec<Tile> {
-    (0..mosaic.rows())
-        .flat_map(|row| (0..mosaic.tiles_across()).map(move |column| Tile { column, row }))
-        .collect()
 }
 
 fn center(rect: ScreenRect) -> ScreenPoint {

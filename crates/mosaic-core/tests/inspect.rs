@@ -2,16 +2,9 @@ mod common;
 
 use std::collections::HashSet;
 
-use common::{BLUE, Fixture, GREEN, RED, solid};
+use common::{BLUE, Fixture, GREEN, RED, solid, tiles};
 use image::{Rgb, RgbImage};
 use mosaic_core::{AnalysisCache, BuildSettings, CancelToken, Mosaic, THUMBNAIL_SIZE, Tile, build};
-
-/// Every Tile of `mosaic`, row by row.
-fn tiles(mosaic: &Mosaic) -> Vec<Tile> {
-    (0..mosaic.rows())
-        .flat_map(|row| (0..mosaic.tiles_across()).map(move |column| Tile { column, row }))
-        .collect()
-}
 
 fn tile(column: u32, row: u32) -> Tile {
     Tile { column, row }
@@ -163,7 +156,7 @@ fn thumbnails_are_made_afresh_when_the_cache_is_corrupt() {
     fixture.add_source_image("banded.png", &banded_red_blue());
     let target_image = red_left_blue_right_target(&fixture);
     fixture.build(&target_image, 1);
-    let cache = fixture.dir.path().join("cache");
+    let cache = fixture.cache_folder();
     let mut folders = vec![cache];
     while let Some(folder) = folders.pop() {
         for entry in std::fs::read_dir(folder).unwrap() {
