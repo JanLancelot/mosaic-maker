@@ -1,5 +1,4 @@
 use std::collections::{HashMap, HashSet};
-use std::fmt;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 
@@ -14,6 +13,7 @@ use crate::cancel::CancelToken;
 use crate::color_signature::ColorSignature;
 use crate::mosaic::{Mosaic, RENDERED_TILE_SIZE, Tile};
 use crate::scan;
+use crate::warning::{BuildReport, BuildStats, BuildWarning, SkipReason};
 
 /// The Repeat Radius a new build starts with.
 pub const DEFAULT_REPEAT_RADIUS: u32 = 3;
@@ -34,61 +34,7 @@ pub struct BuildSettings {
 #[derive(Debug)]
 pub struct Built {
     pub mosaic: Mosaic,
-    pub warnings: Vec<BuildWarning>,
-    pub stats: BuildStats,
-}
-
-/// Something the build worked around rather than failing.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum BuildWarning {
-    /// A file or folder in the Source Library that holds no usable Source Image. `path` is
-    /// relative to the Source Library.
-    SkippedFile { path: PathBuf, reason: SkipReason },
-    /// Every Source Image already filled a Tile within the Repeat Radius of `tile`, so for
-    /// this Tile alone the radius shrank to `repeat_radius`.
-    RepeatRadiusRelaxed { tile: Tile, repeat_radius: u32 },
-}
-
-impl fmt::Display for BuildWarning {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            BuildWarning::SkippedFile { path, reason } => {
-                write!(f, "skipped {}: {reason}", path.display())
-            }
-            BuildWarning::RepeatRadiusRelaxed {
-                tile,
-                repeat_radius,
-            } => write!(
-                f,
-                "Repeat Radius relaxed to {repeat_radius} for the Tile at column {}, row {}",
-                tile.column, tile.row
-            ),
-        }
-    }
-}
-
-/// Why a file in the Source Library was not used as a Source Image.
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-pub enum SkipReason {
-    #[error("HEIC isn't supported")]
-    Heic,
-    #[error("not an image")]
-    NotAnImage,
-    #[error("{0} isn't supported")]
-    UnsupportedFormat(String),
-    #[error("the image is corrupt ({0})")]
-    Corrupt(String),
-    #[error("it couldn't be read ({0})")]
-    Unreadable(String),
-}
-
-/// Counts describing how a build went.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct BuildStats {
-    /// Distinct Source Images found in the Source Library.
-    pub source_images: usize,
-    /// Source Images whose analysis was read from the [`AnalysisCache`].
-    pub cache_hits: usize,
+    pub report: BuildReport,
 }
 
 /// The part of a build that is currently running.
@@ -263,13 +209,15 @@ pub fn build(
     );
     Ok(Built {
         mosaic,
-        warnings,
-        stats: BuildStats {
-            source_images: analysed.len(),
-            cache_hits: analysed
-                .iter()
-                .filter(|analysed| analysed.from_cache)
-                .count(),
+        report: BuildReport {
+            warnings,
+            stats: BuildStats {
+                source_images: analysed.len(),
+                cache_hits: analysed
+                    .iter()
+                    .filter(|analysed| analysed.from_cache)
+                    .count(),
+            },
         },
     })
 }
@@ -282,9 +230,9 @@ fn open_image(path: &Path) -> Result<RgbImage, image::ImageError> {
 }
 
 /// Analyses every decodable image in `source_library` and its subfolders, reusing what
-/// `cache` holds, in path order so
-/// builds are repeatable however the parallel work interleaves. Byte-identical files are one Source Image, last seen at the first
-/// path. Files that can't be Source Images are skipped with a warning.
+/// `cache` holds. Source Images come in path order, so builds are repeatable however the
+/// parallel work interleaves. Byte-identical files are one Source Image, last seen at the
+/// first path. Files that can't be Source Images are skipped with a warning.
 fn analyse_source_library(
     source_library: &Path,
     cache: &AnalysisCache,

@@ -7,7 +7,7 @@ use std::sync::mpsc::{Receiver, TryRecvError, channel};
 use eframe::egui;
 use image::imageops::{self, FilterType};
 use mosaic_core::{
-    AnalysisCache, BuildError, BuildSettings, BuildStats, BuildWarning, CancelToken,
+    AnalysisCache, BuildError, BuildReport, BuildSettings, BuildStats, CancelToken,
     DEFAULT_REPEAT_RADIUS, Mosaic, Progress, Stage,
 };
 
@@ -62,12 +62,6 @@ enum BuildEvent {
     Progress(Progress),
     /// The rendered Mosaic, ready to upload as a texture.
     Finished(Result<(egui::ColorImage, BuildReport), BuildError>),
-}
-
-/// What a finished build says beyond the Mosaic itself.
-struct BuildReport {
-    warnings: Vec<BuildWarning>,
-    stats: BuildStats,
 }
 
 /// How a build ended, as far as the window is concerned.
@@ -166,7 +160,7 @@ impl MosaicMakerApp {
         }
         if let Some(report) = &self.report {
             ui.add_space(8.0);
-            build_report(ui, report);
+            show_build_report(ui, report);
         }
     }
 
@@ -216,12 +210,10 @@ impl MosaicMakerApp {
                 &build_cancel,
             );
             let finished = result.map(|built| {
-                let image = displayable_image(&built.mosaic, max_texture_side);
-                let report = BuildReport {
-                    warnings: built.warnings,
-                    stats: built.stats,
-                };
-                (image, report)
+                (
+                    displayable_image(&built.mosaic, max_texture_side),
+                    built.report,
+                )
             });
             let _ = sender.send(BuildEvent::Finished(finished));
             ctx.request_repaint();
@@ -289,7 +281,7 @@ fn random_seed() -> u64 {
 }
 
 /// A summary of the last build: how many Source Images it found, and what it worked around.
-fn build_report(ui: &mut egui::Ui, report: &BuildReport) {
+fn show_build_report(ui: &mut egui::Ui, report: &BuildReport) {
     let BuildStats {
         source_images,
         cache_hits,
@@ -298,11 +290,7 @@ fn build_report(ui: &mut egui::Ui, report: &BuildReport) {
         "Built from {source_images} Source Images ({cache_hits} already analysed)."
     ));
 
-    let skipped: Vec<&BuildWarning> = report
-        .warnings
-        .iter()
-        .filter(|warning| matches!(warning, BuildWarning::SkippedFile { .. }))
-        .collect();
+    let skipped: Vec<_> = report.skipped_files().collect();
     if !skipped.is_empty() {
         ui.collapsing(format!("{} files skipped", skipped.len()), |ui| {
             egui::ScrollArea::vertical()
@@ -315,11 +303,7 @@ fn build_report(ui: &mut egui::Ui, report: &BuildReport) {
         });
     }
 
-    let relaxed = report
-        .warnings
-        .iter()
-        .filter(|warning| matches!(warning, BuildWarning::RepeatRadiusRelaxed { .. }))
-        .count();
+    let relaxed = report.relaxed_tile_count();
     if relaxed > 0 {
         ui.label(format!(
             "Not enough Source Images to keep the Repeat Radius everywhere: it was relaxed \

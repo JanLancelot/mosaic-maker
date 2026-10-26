@@ -15,7 +15,7 @@ pub struct Tile {
 
 /// What identifies a Source Image: a hash of its file's contents (ADR 0003). Byte-identical
 /// files share one; any change to the bytes gives a new one.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct SourceImageId([u8; 32]);
 
 impl SourceImageId {

@@ -283,6 +283,7 @@ fn heic_non_image_and_corrupt_files_are_skipped_each_with_a_reason() {
     let built = fixture.build_reporting(&target_image, 1);
 
     let mut skipped: Vec<_> = built
+        .report
         .warnings
         .iter()
         .map(|warning| match warning {
@@ -302,7 +303,7 @@ fn heic_non_image_and_corrupt_files_are_skipped_each_with_a_reason() {
         ),
         "{skipped:?}"
     );
-    assert_eq!(built.stats.source_images, 1);
+    assert_eq!(built.report.stats.source_images, 1);
 }
 
 #[test]
@@ -315,8 +316,8 @@ fn hidden_files_are_left_out_without_a_warning() {
 
     let built = fixture.build_reporting(&target_image, 1);
 
-    assert_eq!(built.warnings, []);
-    assert_eq!(built.stats.source_images, 1);
+    assert_eq!(built.report.warnings, []);
+    assert_eq!(built.report.stats.source_images, 1);
 }
 
 const TOP_LEFT: Tile = Tile { column: 0, row: 0 };
@@ -330,7 +331,7 @@ fn byte_identical_files_at_different_paths_are_one_source_image() {
 
     let built = fixture.build_reporting(&target_image, 1);
 
-    assert_eq!(built.stats.source_images, 1);
+    assert_eq!(built.report.stats.source_images, 1);
 }
 
 #[test]
@@ -403,8 +404,8 @@ fn a_second_build_reuses_the_cached_analysis_and_builds_the_same_mosaic() {
     let first = fixture.build_reporting(&target_image, 2);
     let second = fixture.build_reporting(&target_image, 2);
 
-    assert_eq!(first.stats.cache_hits, 0);
-    assert_eq!(second.stats.cache_hits, 2);
+    assert_eq!(first.report.stats.cache_hits, 0);
+    assert_eq!(second.report.stats.cache_hits, 2);
     assert_eq!(second.mosaic.rendered(), first.mosaic.rendered());
 }
 
@@ -440,9 +441,9 @@ fn a_corrupt_cache_entry_is_recomputed_rather_than_failing_the_build() {
     let second = fixture.build_reporting(&target_image, 2);
     let third = fixture.build_reporting(&target_image, 2);
 
-    assert_eq!(second.stats.cache_hits, 0);
+    assert_eq!(second.report.stats.cache_hits, 0);
     assert_eq!(second.mosaic.rendered(), first.mosaic.rendered());
-    assert_eq!(third.stats.cache_hits, 2);
+    assert_eq!(third.report.stats.cache_hits, 2);
 }
 
 /// Adds `count` slightly different shades of red to the Source Library.
@@ -497,12 +498,13 @@ fn with_a_big_enough_source_library_no_source_image_repeats_within_the_repeat_ra
     let built = fixture.build_with_settings(&target_image, &settings);
 
     assert_eq!(repeats_within(&built.mosaic, 2), []);
-    assert_eq!(built.warnings, []);
+    assert_eq!(built.report.warnings, []);
 }
 
 /// The Repeat Radius each Tile was filled with, given the radius asked for.
 fn repeat_radius_used(built: &Built, asked: u32, tile: Tile) -> u32 {
     built
+        .report
         .warnings
         .iter()
         .find_map(|warning| match warning {
@@ -529,6 +531,7 @@ fn with_one_source_image_every_tile_but_the_first_filled_relaxes_the_repeat_radi
     let built = fixture.build_with_settings(&target_image, &settings);
 
     let relaxed_to: Vec<u32> = built
+        .report
         .warnings
         .iter()
         .map(|warning| match warning {
@@ -553,7 +556,7 @@ fn with_a_too_small_source_library_the_repeat_radius_is_relaxed_only_where_neede
     let built = fixture.build_with_settings(&target_image, &settings);
 
     let tile_count = tiles(&built.mosaic).len();
-    let relaxed = built.warnings.len();
+    let relaxed = built.report.warnings.len();
     assert!(
         relaxed > 0 && relaxed < tile_count,
         "{relaxed} Tiles relaxed"
@@ -564,7 +567,7 @@ fn with_a_too_small_source_library_the_repeat_radius_is_relaxed_only_where_neede
             .into_iter()
             .any(|tile| (1..3).contains(&repeat_radius_used(&built, 3, tile))),
         "{:?}",
-        built.warnings
+        built.report.warnings
     );
     // Of two Tiles sharing a Source Image, the one filled later must have been allowed to.
     for (a, b) in repeats_within(&built.mosaic, 3) {

@@ -1,6 +1,7 @@
-use crate::build::{BuildError, BuildWarning};
+use crate::build::BuildError;
 use crate::color_signature::ColorSignature;
 use crate::mosaic::Tile;
+use crate::warning::BuildWarning;
 
 /// Which Source Image fills each Tile, and the Tiles where the Repeat Radius had to shrink.
 pub(crate) struct Assignment {

@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use crate::build::{BuildWarning, SkipReason};
+use crate::warning::{BuildWarning, SkipReason};
 
 /// Every file under `source_library`, at any depth, relative to it and in path order so
 /// builds are repeatable. Hidden files and folders (named with a leading `.`) are left

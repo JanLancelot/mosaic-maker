@@ -4,10 +4,10 @@ use std::path::Path;
 use image::imageops::{self, FilterType};
 use image::{DynamicImage, ImageError, ImageReader, Rgb, RgbImage};
 
-use crate::build::SkipReason;
 use crate::cache::AnalysisCache;
 use crate::color_signature::ColorSignature;
 use crate::mosaic::{RENDERED_TILE_SIZE, SourceImage, SourceImageId};
+use crate::warning::SkipReason;
 
 /// What the build needs to know about a Source Image's pixels.
 pub(crate) struct Analysis {

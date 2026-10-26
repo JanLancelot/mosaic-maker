@@ -10,11 +10,10 @@ mod cancel;
 mod color_signature;
 mod mosaic;
 mod scan;
+mod warning;
 
-pub use build::{
-    BuildError, BuildSettings, BuildStats, BuildWarning, Built, DEFAULT_REPEAT_RADIUS, Progress,
-    SkipReason, Stage, build,
-};
+pub use build::{BuildError, BuildSettings, Built, DEFAULT_REPEAT_RADIUS, Progress, Stage, build};
 pub use cache::AnalysisCache;
 pub use cancel::CancelToken;
 pub use mosaic::{Mosaic, RENDERED_TILE_SIZE, SourceImage, SourceImageId, Tile};
+pub use warning::{BuildReport, BuildStats, BuildWarning, SkipReason};
