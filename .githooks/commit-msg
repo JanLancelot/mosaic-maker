@@ -1,0 +1,4 @@
+#!/bin/sh
+# Rejects commit subjects without a Conventional Commits header.
+subject=$(grep -v '^#' "$1" | head -n 1)
+exec "$(git rev-parse --show-toplevel)/scripts/check-commit-subject.sh" "$subject"
