@@ -306,6 +306,34 @@ fn heic_non_image_and_corrupt_files_are_skipped_each_with_a_reason() {
     assert_eq!(built.report.stats.source_images, 1);
 }
 
+#[cfg(unix)]
+#[test]
+fn a_linked_folder_is_skipped_with_a_reason_rather_than_followed() {
+    let fixture = Fixture::new();
+    fixture.add_source_image("red.png", &solid(8, 8, RED));
+    // Linking back to the Source Library itself would loop forever if followed.
+    std::os::unix::fs::symlink(
+        fixture.source_library(),
+        fixture.source_library().join("loop"),
+    )
+    .unwrap();
+    let target_image = fixture.set_target_image(&solid(10, 10, RED));
+
+    let built = fixture.build_reporting(&target_image, 1);
+
+    assert!(
+        matches!(
+            &built.report.warnings[..],
+            [BuildWarning::SkippedFile {
+                path,
+                reason: SkipReason::LinkedFolder,
+            }] if path == Path::new("loop")
+        ),
+        "{:?}",
+        built.report.warnings
+    );
+}
+
 #[test]
 fn hidden_files_are_left_out_without_a_warning() {
     let fixture = Fixture::new();

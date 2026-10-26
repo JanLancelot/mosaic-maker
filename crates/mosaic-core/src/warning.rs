@@ -69,6 +69,9 @@ pub enum SkipReason {
     Corrupt(String),
     #[error("it couldn't be read ({0})")]
     Unreadable(String),
+    /// Following links to folders could loop forever, so they are left alone.
+    #[error("it links to a folder, and linked folders aren't followed")]
+    LinkedFolder,
 }
 
 /// Counts describing how a build went.

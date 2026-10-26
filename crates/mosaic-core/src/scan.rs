@@ -13,7 +13,7 @@ pub(crate) fn files_in(
     let mut files = Vec::new();
     let mut folders = vec![PathBuf::new()];
     while let Some(folder) = folders.pop() {
-        match read_folder(source_library, &folder, &mut files, &mut folders) {
+        match read_folder(source_library, &folder, &mut files, &mut folders, warnings) {
             Ok(()) => {}
             Err(error) if folder.as_os_str().is_empty() => return Err(error),
             Err(error) => warnings.push(BuildWarning::SkippedFile {
@@ -31,6 +31,7 @@ fn read_folder(
     folder: &Path,
     files: &mut Vec<PathBuf>,
     folders: &mut Vec<PathBuf>,
+    warnings: &mut Vec<BuildWarning>,
 ) -> std::io::Result<()> {
     for entry in std::fs::read_dir(source_library.join(folder))? {
         let entry = entry?;
@@ -38,11 +39,17 @@ fn read_folder(
             continue;
         }
         let relative_path = folder.join(entry.file_name());
-        // Symbolic links to folders aren't followed, so a link cycle can't trap the scan.
+        let path = source_library.join(&relative_path);
         if entry.file_type()?.is_dir() {
             folders.push(relative_path);
-        } else if source_library.join(&relative_path).is_file() {
+        } else if path.is_file() {
             files.push(relative_path);
+        } else if path.is_dir() {
+            // A symbolic link to a folder: not followed, so a link cycle can't trap the scan.
+            warnings.push(BuildWarning::SkippedFile {
+                path: relative_path,
+                reason: SkipReason::LinkedFolder,
+            });
         }
     }
     Ok(())
