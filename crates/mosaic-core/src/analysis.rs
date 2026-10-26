@@ -26,7 +26,7 @@ pub(crate) struct AnalysedSourceImage {
 
 /// Reads the file at `relative_path` in `source_library` and analyses it, or reuses its
 /// analysis from `cache`, or says why it can't be a Source Image. A fresh analysis also
-/// leaves the Source Image's thumbnail in `cache`, while the file is decoded anyway.
+/// leaves the Source Image's Thumbnail in `cache`, while the file is decoded anyway.
 pub(crate) fn analyse_file(
     source_library: &Path,
     relative_path: &Path,
@@ -59,7 +59,7 @@ pub(crate) fn analyse_file(
     })
 }
 
-/// The thumbnail of the Source Image `id`, last found at `relative_path` in
+/// The Thumbnail of the Source Image `id`, last found at `relative_path` in
 /// `source_library`: from `cache`, or made afresh from the file and kept in `cache`. `None` if
 /// the file no longer holds that Source Image.
 pub(crate) fn thumbnail(
@@ -77,9 +77,10 @@ pub(crate) fn thumbnail(
     Some(thumbnail)
 }
 
-/// The file at `path`, if it still holds the Source Image `id`, scaled down to fit within
-/// `max_side` pixels square. Unlike a thumbnail it is not cropped.
-pub(crate) fn preview(path: &Path, id: SourceImageId, max_side: u32) -> Option<RgbImage> {
+/// The Original of the Source Image `id`, last found at `path`, scaled down to fit within
+/// `max_side` pixels square, or `None` if it is unreachable. Unlike a Thumbnail it is not
+/// cropped.
+pub(crate) fn original(path: &Path, id: SourceImageId, max_side: u32) -> Option<RgbImage> {
     let image = decode(&read_if_still(path, id)?).ok()?;
     let (width, height) = image.dimensions();
     let longest = width.max(height);

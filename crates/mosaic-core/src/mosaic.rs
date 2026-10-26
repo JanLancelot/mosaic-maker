@@ -9,7 +9,7 @@ use crate::analysis;
 /// Side length, in pixels, of one Tile in a Mosaic's rendered image.
 pub const RENDERED_TILE_SIZE: u32 = 32;
 
-/// Side length, in pixels, of a Source Image's thumbnail.
+/// Side length, in pixels, of a Source Image's Thumbnail.
 pub const THUMBNAIL_SIZE: u32 = 128;
 
 /// One square grid position in a Mosaic.
@@ -50,7 +50,7 @@ pub struct SourceImage {
 
 impl fmt::Debug for SourceImage {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // The thumbnail's pixels would bury everything else.
+        // The Thumbnail's pixels would bury everything else.
         f.debug_struct("SourceImage")
             .field("id", &self.id)
             .field("last_known_path", &self.last_known_path)
@@ -146,11 +146,10 @@ impl Mosaic {
         self.source_library.join(&source_image.last_known_path)
     }
 
-    /// The original file of `source_image`, shown on white and scaled down to fit within
-    /// `max_side` pixels square, or `None` if the file can't be found or no longer holds that
-    /// Source Image.
-    pub fn preview(&self, source_image: &SourceImage, max_side: u32) -> Option<RgbImage> {
-        analysis::preview(&self.path_of(source_image), source_image.id, max_side)
+    /// The Original of `source_image`, shown on white and scaled down to fit within
+    /// `max_side` pixels square, or `None` if the Original is unreachable.
+    pub fn original(&self, source_image: &SourceImage, max_side: u32) -> Option<RgbImage> {
+        analysis::original(&self.path_of(source_image), source_image.id, max_side)
     }
 
     /// Every Tile that the Source Image `id` fills, row by row. None if it isn't used.

@@ -32,7 +32,7 @@ impl Entry {
     }
 }
 
-/// Where per-Source Image analysis and thumbnails are kept between builds, keyed by Source
+/// Where per-Source Image analysis and Thumbnails are kept between builds, keyed by Source
 /// Image identity.
 /// One cache serves every Source Library, and it is never written inside one.
 #[derive(Debug, Clone)]
@@ -88,7 +88,7 @@ impl AnalysisCache {
         let _ = self.try_store(Entry::Analysis, id, &color_signature);
     }
 
-    /// The cached thumbnail of the Source Image `id`, or `None` if there is none or it can't
+    /// The cached Thumbnail of the Source Image `id`, or `None` if there is none or it can't
     /// be read back.
     pub(crate) fn load_thumbnail(&self, id: SourceImageId) -> Option<RgbImage> {
         let pixels = self.load_entry(Entry::Thumbnail, id)?;

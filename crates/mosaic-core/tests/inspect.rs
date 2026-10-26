@@ -207,25 +207,25 @@ fn thumbnails_are_made_even_when_the_cache_cannot_be_written() {
 }
 
 #[test]
-fn the_preview_shows_the_whole_original_scaled_to_fit() {
+fn the_original_is_shown_whole_and_scaled_down_to_fit() {
     let fixture = Fixture::new();
     fixture.add_source_image("banded.png", &banded_red_blue());
     let mosaic = fixture.build(&red_left_blue_right_target(&fixture), 1);
     let source_image = mosaic.source_image_at(tile(0, 0)).unwrap();
 
-    let preview = mosaic.preview(source_image, 100).unwrap();
+    let original = mosaic.original(source_image, 100).unwrap();
 
     // 400 × 200 scaled to fit 100 px, uncropped: green bands either side of red and blue.
-    assert_eq!(preview.dimensions(), (100, 50));
+    assert_eq!(original.dimensions(), (100, 50));
     for (x, color) in [(5, GREEN), (37, RED), (62, BLUE), (94, GREEN)] {
-        assert_eq!(*preview.get_pixel(x, 25), color, "preview pixel ({x}, 25)");
+        assert_eq!(*original.get_pixel(x, 25), color, "pixel ({x}, 25)");
     }
-    let small = mosaic.preview(source_image, 1000).unwrap();
-    assert_eq!(small, banded_red_blue(), "a preview is never scaled up");
+    let small = mosaic.original(source_image, 1000).unwrap();
+    assert_eq!(small, banded_red_blue(), "an Original is never scaled up");
 }
 
 #[test]
-fn there_is_no_preview_once_the_original_is_gone_or_edited() {
+fn an_original_that_was_deleted_or_edited_is_unreachable() {
     let fixture = Fixture::new();
     fixture.add_source_image("red.png", &solid(8, 8, RED));
     fixture.add_source_image("blue.png", &solid(8, 8, BLUE));
@@ -236,12 +236,12 @@ fn there_is_no_preview_once_the_original_is_gone_or_edited() {
     std::fs::remove_file(fixture.source_library().join("red.png")).unwrap();
     fixture.add_source_image("blue.png", &solid(8, 8, Rgb([0, 0, 254])));
 
-    assert_eq!(mosaic.preview(red, 100), None);
-    assert_eq!(mosaic.preview(blue, 100), None);
+    assert_eq!(mosaic.original(red, 100), None);
+    assert_eq!(mosaic.original(blue, 100), None);
 }
 
 #[test]
-fn a_transparent_original_is_previewed_on_white() {
+fn a_transparent_original_is_shown_on_white() {
     let fixture = Fixture::new();
     // Transparent black around an opaque red center.
     let transparent = image::RgbaImage::from_fn(30, 30, |x, y| {
@@ -256,10 +256,10 @@ fn a_transparent_original_is_previewed_on_white() {
         .unwrap();
     let mosaic = fixture.build(&red_left_blue_right_target(&fixture), 1);
 
-    let preview = mosaic
-        .preview(mosaic.source_image_at(tile(0, 0)).unwrap(), 100)
+    let original = mosaic
+        .original(mosaic.source_image_at(tile(0, 0)).unwrap(), 100)
         .unwrap();
 
-    assert_eq!(*preview.get_pixel(0, 0), Rgb([255, 255, 255]));
-    assert_eq!(*preview.get_pixel(15, 15), RED);
+    assert_eq!(*original.get_pixel(0, 0), Rgb([255, 255, 255]));
+    assert_eq!(*original.get_pixel(15, 15), RED);
 }

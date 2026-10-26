@@ -22,19 +22,19 @@ const DEFAULT_TILES_ACROSS: u32 = 60;
 /// How much one point of scrolling zooms the canvas.
 const SCROLL_ZOOM_SPEED: f32 = 0.005;
 
-/// Tiles drawn larger than this, in physical pixels, are drawn from their thumbnails, since the
+/// Tiles drawn larger than this, in physical pixels, are drawn from their Thumbnails, since the
 /// rendered Mosaic (`RENDERED_TILE_SIZE` pixels per Tile) would look soft. Any smaller, and so
 /// many Tiles are on screen that drawing each one would make panning stutter.
 const DETAILED_TILE_PIXELS: f32 = 1.5 * RENDERED_TILE_SIZE as f32;
 
-/// The most thumbnails uploaded to the GPU in one frame, so zooming in never stalls a frame.
+/// The most Thumbnails uploaded to the GPU in one frame, so zooming in never stalls a frame.
 const THUMBNAIL_UPLOADS_PER_FRAME: usize = 48;
 
-/// Beyond this many thumbnail textures, those not drawn in the latest frame are dropped.
+/// Beyond this many Thumbnail textures, those not drawn in the latest frame are dropped.
 const MAX_THUMBNAIL_TEXTURES: usize = 1024;
 
-/// The longest side, in pixels, of the inspector's preview of an original.
-const PREVIEW_SIZE: u32 = 1024;
+/// The longest side, in pixels, the inspector shows an Original at.
+const ORIGINAL_SIZE: u32 = 1024;
 
 /// The whole of a texture.
 const FULL_UV: egui::Rect = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
@@ -116,17 +116,17 @@ struct Pinned {
     tile: Tile,
     /// Every Tile the Source Image fills, all highlighted.
     tiles: Vec<Tile>,
-    preview: Preview,
+    original: Original,
     reveal_error: Option<String>,
 }
 
-/// The inspector's larger preview of the pinned Source Image.
-enum Preview {
-    /// The original is being read on another thread; the thumbnail stands in meanwhile.
+/// The pinned Source Image's Original, as the inspector shows it.
+enum Original {
+    /// Being read on another thread; the Thumbnail stands in meanwhile.
     Loading(Receiver<Option<egui::ColorImage>>),
-    Original(egui::TextureHandle),
-    /// The original couldn't be read, so the thumbnail stands in.
-    Unavailable,
+    Shown(egui::TextureHandle),
+    /// The Thumbnail stands in.
+    Unreachable,
 }
 
 /// Thumbnails uploaded as textures for drawing Tiles up close, a few per frame.
@@ -134,7 +134,7 @@ enum Preview {
 struct ThumbnailTextures {
     textures: HashMap<SourceImageId, egui::TextureHandle>,
     uploads_left: usize,
-    /// Whether a thumbnail wanted this frame had to wait for a later one.
+    /// Whether a Thumbnail wanted this frame had to wait for a later one.
     waiting: bool,
     drawn: HashSet<SourceImageId>,
 }
@@ -386,7 +386,7 @@ impl ShownMosaic {
             FULL_UV,
             UNTINTED,
         );
-        // Up close, visible Tiles are drawn again, from their thumbnails.
+        // Up close, visible Tiles are drawn again, from their Thumbnails.
         if viewport.tile_side() * ctx.pixels_per_point() > DETAILED_TILE_PIXELS {
             for tile in viewport.visible_tiles(screen) {
                 let source_image = source_image_at(&self.mosaic, tile);
@@ -433,7 +433,7 @@ impl ShownMosaic {
         }
     }
 
-    /// Pins the inspector to the Source Image filling `tile`, and starts reading its original.
+    /// Pins the inspector to the Source Image filling `tile`, and starts reading its Original.
     fn pin(&mut self, ctx: &egui::Context, tile: Tile) {
         let id = source_image_at(&self.mosaic, tile).id();
         if let Some(pinned) = &self.pinned
@@ -441,13 +441,13 @@ impl ShownMosaic {
         {
             return;
         }
-        let (sender, preview) = channel();
+        let (sender, original) = channel();
         let mosaic = Arc::clone(&self.mosaic);
         let ctx = ctx.clone();
         std::thread::spawn(move || {
             let source_image = source_image_at(&mosaic, tile);
             let original = mosaic
-                .preview(source_image, PREVIEW_SIZE)
+                .original(source_image, ORIGINAL_SIZE)
                 .map(|image| color_image(&image));
             // The receiver goes away if the inspector was unpinned meanwhile.
             let _ = sender.send(original);
@@ -456,26 +456,28 @@ impl ShownMosaic {
         self.pinned = Some(Pinned {
             tile,
             tiles: self.mosaic.tiles_filled_by(id),
-            preview: Preview::Loading(preview),
+            original: Original::Loading(original),
             reveal_error: None,
         });
     }
 
-    /// The pinned Source Image: a larger preview, where it lives, and how much it is used.
+    /// The pinned Source Image: its Original, where that lives, and how much it is used.
     fn inspector(&mut self, ui: &mut egui::Ui) {
         let Some(pinned) = &mut self.pinned else {
             return;
         };
-        if let Preview::Loading(receiver) = &pinned.preview {
+        if let Original::Loading(receiver) = &pinned.original {
             match receiver.try_recv() {
                 Ok(Some(image)) => {
-                    pinned.preview = Preview::Original(ui.ctx().load_texture(
-                        "preview",
+                    pinned.original = Original::Shown(ui.ctx().load_texture(
+                        "original",
                         image,
                         egui::TextureOptions::LINEAR,
                     ));
                 }
-                Ok(None) | Err(TryRecvError::Disconnected) => pinned.preview = Preview::Unavailable,
+                Ok(None) | Err(TryRecvError::Disconnected) => {
+                    pinned.original = Original::Unreachable
+                }
                 Err(TryRecvError::Empty) => {}
             }
         }
@@ -483,19 +485,19 @@ impl ShownMosaic {
 
         ui.heading("Source Image");
         ui.add_space(8.0);
-        let (preview, caption) = match &pinned.preview {
-            Preview::Original(texture) => (texture.clone(), None),
-            Preview::Loading(_) => (
+        let (shown, caption) = match &pinned.original {
+            Original::Shown(texture) => (texture.clone(), None),
+            Original::Loading(_) => (
                 self.thumbnails.texture(ui.ctx(), source_image),
-                Some("Loading the original…"),
+                Some("Loading the Original…"),
             ),
-            Preview::Unavailable => (
+            Original::Unreachable => (
                 self.thumbnails.texture(ui.ctx(), source_image),
-                Some("The original couldn't be read, so this is its thumbnail."),
+                Some("The Original is unreachable, so this is its Thumbnail."),
             ),
         };
         let side = ui.available_width();
-        ui.add(egui::Image::new(&preview).max_size(egui::vec2(side, side)));
+        ui.add(egui::Image::new(&shown).max_size(egui::vec2(side, side)));
         if let Some(caption) = caption {
             ui.weak(caption);
         }
@@ -536,7 +538,7 @@ impl ThumbnailTextures {
         self.drawn.clear();
     }
 
-    /// The texture of `source_image`'s thumbnail, uploaded now if it isn't yet.
+    /// The texture of `source_image`'s Thumbnail, uploaded now if it isn't yet.
     fn texture(&mut self, ctx: &egui::Context, source_image: &SourceImage) -> egui::TextureHandle {
         let id = source_image.id();
         self.drawn.insert(id);
@@ -569,7 +571,7 @@ impl ThumbnailTextures {
         Some(self.texture(ctx, source_image))
     }
 
-    /// Lets go of textures no longer needed. Returns whether thumbnails are still waiting to
+    /// Lets go of textures no longer needed. Returns whether Thumbnails are still waiting to
     /// be uploaded, so another frame is needed.
     fn end_frame(&mut self) -> bool {
         if self.textures.len() > MAX_THUMBNAIL_TEXTURES {
