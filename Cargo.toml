@@ -1,0 +1,10 @@
+[workspace]
+resolver = "3"
+members = ["crates/mosaic-core", "crates/mosaic-app"]
+
+[workspace.package]
+edition = "2024"
+
+# Image decoding is painfully slow unoptimised; keep dependencies fast in dev builds.
+[profile.dev.package."*"]
+opt-level = 3

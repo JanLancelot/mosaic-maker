@@ -1,0 +1,5 @@
+#!/bin/sh
+# Runs the same formatting and lint checks as CI.
+set -e
+cargo fmt --check
+cargo clippy --all-targets -- -D warnings

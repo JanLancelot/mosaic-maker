@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  rust:
+    # macOS is the target platform, and it needs no extra system libraries for eframe.
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --check
+      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo test
+      - name: mosaic-core has no GUI dependencies
+        run: |
+          tree=$(cargo tree -p mosaic-core --prefix none)
+          if echo "$tree" | grep -E '^(egui|eframe|winit)([_-][a-z0-9_-]+)? v'; then
+            echo "::error::mosaic-core must not depend on egui, eframe or winit"
+            exit 1
+          fi
+
+  commit-subjects:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Commit subjects have a Conventional Commits header
+        env:
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+          PUSH_AFTER: ${{ github.sha }}
+        run: |
+          if [ -n "$PR_BASE" ]; then
+            range="$PR_BASE..$PR_HEAD"
+          elif git cat-file -e "$PUSH_BEFORE^{commit}" 2>/dev/null; then
+            range="$PUSH_BEFORE..$PUSH_AFTER"
+          else
+            # A new branch, or a force push from a commit we can't see: check everything.
+            range="$PUSH_AFTER"
+          fi
+          echo "Checking $range"
+          scripts/check-commit-range.sh "$range"
