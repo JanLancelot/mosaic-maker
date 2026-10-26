@@ -19,6 +19,9 @@ jobs:
       - run: cargo fmt --check
       - run: cargo clippy --all-targets -- -D warnings
       - run: cargo test
+      # Builds must not depend on how parallel analysis interleaves, so the tests must
+      # also pass with it on one thread.
+      - run: RAYON_NUM_THREADS=1 cargo test -p mosaic-core
       - name: mosaic-core has no GUI dependencies
         run: |
           tree=$(cargo tree -p mosaic-core --prefix none)
