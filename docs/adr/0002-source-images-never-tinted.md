@@ -1,0 +1,3 @@
+# Source Images are never tinted
+
+Many mosaic makers blend each Source Image toward its Tile's target color to improve fidelity. We deliberately don't: a Source Image is only center-cropped and scaled, never color-altered. The purpose of the app is to identify the original artwork (and eventually its artist), and tinting misrepresents other people's work. Fidelity comes from better matching instead (a per-image color layout in a perceptual color space). Don't add tinting as a "quick quality win". If it's ever reconsidered, it should be an explicit opt-in that never applies to inspection previews.
