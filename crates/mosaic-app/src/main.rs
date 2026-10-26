@@ -1,11 +1,15 @@
 //! Mosaic Maker's window: gathers input, runs a build off the UI thread, and shows the Mosaic.
 
+use std::hash::{BuildHasher, RandomState};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{Receiver, TryRecvError, channel};
 
 use eframe::egui;
 use image::imageops::{self, FilterType};
-use mosaic_core::{BuildError, BuildSettings, CancelToken, Mosaic, Progress, Stage};
+use mosaic_core::{
+    AnalysisCache, BuildError, BuildSettings, BuildStats, BuildWarning, CancelToken,
+    DEFAULT_REPEAT_RADIUS, Mosaic, Progress, Stage,
+};
 
 const DEFAULT_TILES_ACROSS: u32 = 60;
 
@@ -21,9 +25,14 @@ struct MosaicMakerApp {
     target_image: Option<PathBuf>,
     source_library: Option<PathBuf>,
     tiles_across: u32,
+    repeat_radius: u32,
+    seed: u64,
+    cache: AnalysisCache,
     running_build: Option<RunningBuild>,
     mosaic: Option<egui::TextureHandle>,
     status: Option<String>,
+    /// What the last finished build worked around.
+    report: Option<BuildReport>,
 }
 
 impl Default for MosaicMakerApp {
@@ -32,9 +41,13 @@ impl Default for MosaicMakerApp {
             target_image: None,
             source_library: None,
             tiles_across: DEFAULT_TILES_ACROSS,
+            repeat_radius: DEFAULT_REPEAT_RADIUS,
+            seed: random_seed(),
+            cache: AnalysisCache::in_user_cache_folder(),
             running_build: None,
             mosaic: None,
             status: None,
+            report: None,
         }
     }
 }
@@ -48,12 +61,18 @@ struct RunningBuild {
 enum BuildEvent {
     Progress(Progress),
     /// The rendered Mosaic, ready to upload as a texture.
-    Finished(Result<egui::ColorImage, BuildError>),
+    Finished(Result<(egui::ColorImage, BuildReport), BuildError>),
+}
+
+/// What a finished build says beyond the Mosaic itself.
+struct BuildReport {
+    warnings: Vec<BuildWarning>,
+    stats: BuildStats,
 }
 
 /// How a build ended, as far as the window is concerned.
 enum Outcome {
-    Built(egui::ColorImage),
+    Built(egui::ColorImage, BuildReport),
     Cancelled,
     Failed(String),
 }
@@ -103,6 +122,25 @@ impl MosaicMakerApp {
         );
         ui.add_space(8.0);
 
+        ui.label("Repeat Radius");
+        ui.add_enabled(
+            idle,
+            egui::DragValue::new(&mut self.repeat_radius).range(0..=20),
+        );
+        ui.add_space(8.0);
+
+        ui.label("Seed");
+        ui.horizontal(|ui| {
+            ui.add_enabled(idle, egui::DragValue::new(&mut self.seed));
+            if ui
+                .add_enabled(idle, egui::Button::new("Randomise"))
+                .clicked()
+            {
+                self.seed = random_seed();
+            }
+        });
+        ui.add_space(8.0);
+
         ui.horizontal(|ui| {
             let ready = self.target_image.is_some() && self.source_library.is_some();
             if ui
@@ -125,6 +163,10 @@ impl MosaicMakerApp {
         if let Some(status) = &self.status {
             ui.add_space(8.0);
             ui.label(status);
+        }
+        if let Some(report) = &self.report {
+            ui.add_space(8.0);
+            build_report(ui, report);
         }
     }
 
@@ -151,7 +193,10 @@ impl MosaicMakerApp {
         };
         let settings = BuildSettings {
             tiles_across: self.tiles_across,
+            repeat_radius: self.repeat_radius,
+            seed: self.seed,
         };
+        let cache = self.cache.clone();
         let cancel = CancelToken::new();
         let (sender, events) = channel();
         let max_texture_side = ctx.input(|input| input.max_texture_side) as u32;
@@ -162,6 +207,7 @@ impl MosaicMakerApp {
                 &target_image,
                 &source_library,
                 &settings,
+                &cache,
                 |progress| {
                     // The receiver only goes away when the app closes.
                     let _ = sender.send(BuildEvent::Progress(progress));
@@ -169,8 +215,15 @@ impl MosaicMakerApp {
                 },
                 &build_cancel,
             );
-            let image = result.map(|mosaic| displayable_image(&mosaic, max_texture_side));
-            let _ = sender.send(BuildEvent::Finished(image));
+            let finished = result.map(|built| {
+                let image = displayable_image(&built.mosaic, max_texture_side);
+                let report = BuildReport {
+                    warnings: built.warnings,
+                    stats: built.stats,
+                };
+                (image, report)
+            });
+            let _ = sender.send(BuildEvent::Finished(finished));
             ctx.request_repaint();
         });
         self.running_build = Some(RunningBuild {
@@ -179,6 +232,7 @@ impl MosaicMakerApp {
             progress: None,
         });
         self.status = None;
+        self.report = None;
     }
 
     fn receive_build_events(&mut self, ctx: &egui::Context) {
@@ -188,7 +242,9 @@ impl MosaicMakerApp {
         let finished = loop {
             match running_build.events.try_recv() {
                 Ok(BuildEvent::Progress(progress)) => running_build.progress = Some(progress),
-                Ok(BuildEvent::Finished(Ok(image))) => break Some(Outcome::Built(image)),
+                Ok(BuildEvent::Finished(Ok((image, report)))) => {
+                    break Some(Outcome::Built(image, report));
+                }
                 Ok(BuildEvent::Finished(Err(BuildError::Cancelled))) => {
                     break Some(Outcome::Cancelled);
                 }
@@ -207,9 +263,10 @@ impl MosaicMakerApp {
         };
         self.running_build = None;
         match outcome {
-            Outcome::Built(image) => {
+            Outcome::Built(image, report) => {
                 self.mosaic = Some(ctx.load_texture("mosaic", image, egui::TextureOptions::LINEAR));
                 self.status = None;
+                self.report = Some(report);
             }
             Outcome::Cancelled => self.status = Some("Build cancelled.".to_owned()),
             Outcome::Failed(error) => {
@@ -224,6 +281,51 @@ fn display_path(path: Option<&Path>) -> String {
         || "None chosen".to_owned(),
         |path| path.display().to_string(),
     )
+}
+
+/// A fresh seed, different on every call.
+fn random_seed() -> u64 {
+    RandomState::new().hash_one(std::time::SystemTime::now())
+}
+
+/// A summary of the last build: how many Source Images it found, and what it worked around.
+fn build_report(ui: &mut egui::Ui, report: &BuildReport) {
+    let BuildStats {
+        source_images,
+        cache_hits,
+    } = report.stats;
+    ui.label(format!(
+        "Built from {source_images} Source Images ({cache_hits} already analysed)."
+    ));
+
+    let skipped: Vec<&BuildWarning> = report
+        .warnings
+        .iter()
+        .filter(|warning| matches!(warning, BuildWarning::SkippedFile { .. }))
+        .collect();
+    if !skipped.is_empty() {
+        ui.collapsing(format!("{} files skipped", skipped.len()), |ui| {
+            egui::ScrollArea::vertical()
+                .max_height(200.0)
+                .show(ui, |ui| {
+                    for warning in skipped {
+                        ui.label(warning.to_string());
+                    }
+                });
+        });
+    }
+
+    let relaxed = report
+        .warnings
+        .iter()
+        .filter(|warning| matches!(warning, BuildWarning::RepeatRadiusRelaxed { .. }))
+        .count();
+    if relaxed > 0 {
+        ui.label(format!(
+            "Not enough Source Images to keep the Repeat Radius everywhere: it was relaxed \
+             for {relaxed} Tiles."
+        ));
+    }
 }
 
 fn progress_bar(progress: Option<Progress>) -> egui::ProgressBar {
