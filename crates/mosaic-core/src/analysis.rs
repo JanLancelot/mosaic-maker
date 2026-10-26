@@ -71,10 +71,7 @@ pub(crate) fn thumbnail(
     if let Some(thumbnail) = cache.load_thumbnail(id) {
         return Some(thumbnail);
     }
-    let bytes = std::fs::read(source_library.join(relative_path)).ok()?;
-    if SourceImageId::of_contents(&bytes) != id {
-        return None;
-    }
+    let bytes = read_if_still(&source_library.join(relative_path), id)?;
     let thumbnail = scaled_to_thumbnail(&center_square(&decode(&bytes).ok()?));
     cache.store_thumbnail(id, &thumbnail);
     Some(thumbnail)
@@ -83,11 +80,7 @@ pub(crate) fn thumbnail(
 /// The file at `path`, if it still holds the Source Image `id`, scaled down to fit within
 /// `max_side` pixels square. Unlike a thumbnail it is not cropped.
 pub(crate) fn preview(path: &Path, id: SourceImageId, max_side: u32) -> Option<RgbImage> {
-    let bytes = std::fs::read(path).ok()?;
-    if SourceImageId::of_contents(&bytes) != id {
-        return None;
-    }
-    let image = decode(&bytes).ok()?;
+    let image = decode(&read_if_still(path, id)?).ok()?;
     let (width, height) = image.dimensions();
     let longest = width.max(height);
     if longest <= max_side {
@@ -101,6 +94,13 @@ pub(crate) fn preview(path: &Path, id: SourceImageId, max_side: u32) -> Option<R
         fit(height),
         FilterType::Lanczos3,
     ))
+}
+
+/// The contents of the file at `path`, if it can be read and still holds the Source Image
+/// `id`.
+fn read_if_still(path: &Path, id: SourceImageId) -> Option<Vec<u8>> {
+    let bytes = std::fs::read(path).ok()?;
+    (SourceImageId::of_contents(&bytes) == id).then_some(bytes)
 }
 
 /// Decodes a JPEG, PNG or WebP file, with any transparency shown on white (ADR 0002).

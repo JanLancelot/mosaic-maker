@@ -199,34 +199,35 @@ pub fn build(
         })
         .collect();
 
-    let pictures = in_parallel(&used, Stage::Rendering, &mut reporter, |analysed| {
-        let thumbnail = analysis::thumbnail(
-            source_library,
-            &analysed.last_known_path,
-            analysed.id,
-            cache,
-        )
-        .ok_or_else(|| BuildError::SourceImageChanged {
-            path: analysed.last_known_path.clone(),
-        })?;
-        let rendered = imageops::resize(
-            &thumbnail,
-            RENDERED_TILE_SIZE,
-            RENDERED_TILE_SIZE,
-            FilterType::Lanczos3,
-        );
-        Ok((thumbnail, rendered))
-    })?
-    .into_iter()
-    .collect::<Result<Vec<_>, BuildError>>()?;
+    let thumbnails_and_rendered =
+        in_parallel(&used, Stage::Rendering, &mut reporter, |analysed| {
+            let thumbnail = analysis::thumbnail(
+                source_library,
+                &analysed.last_known_path,
+                analysed.id,
+                cache,
+            )
+            .ok_or_else(|| BuildError::SourceImageChanged {
+                path: analysed.last_known_path.clone(),
+            })?;
+            let rendered = imageops::resize(
+                &thumbnail,
+                RENDERED_TILE_SIZE,
+                RENDERED_TILE_SIZE,
+                FilterType::Lanczos3,
+            );
+            Ok((thumbnail, rendered))
+        })?
+        .into_iter()
+        .collect::<Result<Vec<_>, BuildError>>()?;
     let rendered = render(
         &grid,
         &tile_source_images,
-        pictures.iter().map(|(_, rendered)| rendered),
+        thumbnails_and_rendered.iter().map(|(_, rendered)| rendered),
     );
     let source_images = used
         .iter()
-        .zip(pictures)
+        .zip(thumbnails_and_rendered)
         .map(|(analysed, (thumbnail, _))| {
             SourceImage::new(analysed.id, analysed.last_known_path.clone(), thumbnail)
         })
