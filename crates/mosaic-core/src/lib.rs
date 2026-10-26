@@ -10,10 +10,12 @@ mod cancel;
 mod color_signature;
 mod mosaic;
 mod scan;
+mod viewport;
 mod warning;
 
 pub use build::{BuildError, BuildSettings, Built, DEFAULT_REPEAT_RADIUS, Progress, Stage, build};
 pub use cache::AnalysisCache;
 pub use cancel::CancelToken;
-pub use mosaic::{Mosaic, RENDERED_TILE_SIZE, SourceImage, SourceImageId, Tile};
+pub use mosaic::{Mosaic, RENDERED_TILE_SIZE, SourceImage, SourceImageId, THUMBNAIL_SIZE, Tile};
+pub use viewport::{ScreenPoint, ScreenRect, Viewport};
 pub use warning::{BuildReport, BuildStats, BuildWarning, SkipReason};

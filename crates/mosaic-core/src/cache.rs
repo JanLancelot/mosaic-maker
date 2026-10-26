@@ -5,13 +5,17 @@ use image::RgbImage;
 
 use crate::analysis::Analysis;
 use crate::color_signature::ColorSignature;
-use crate::mosaic::{RENDERED_TILE_SIZE, SourceImageId};
+use crate::mosaic::{SourceImageId, THUMBNAIL_SIZE};
 
-/// Opens every entry; bump the version whenever the layout or the analysis changes, so
-/// entries from older builds are recomputed rather than misread.
-const MAGIC: &[u8; 8] = b"MMCACHE1";
+/// Opens every analysis entry; bump the version whenever the layout or the analysis changes,
+/// so entries from older builds are recomputed rather than misread.
+const MAGIC: &[u8; 8] = b"MMCACHE2";
 
-/// Where per-Source Image analysis is kept between builds, keyed by Source Image identity.
+/// Opens every thumbnail entry; bump the version whenever the layout or the thumbnail changes.
+const THUMBNAIL_MAGIC: &[u8; 8] = b"MMTHUMB1";
+
+/// Where per-Source Image analysis and thumbnails are kept between builds, keyed by Source
+/// Image identity.
 /// One cache serves every Source Library, and it is never written inside one.
 #[derive(Debug, Clone)]
 pub struct AnalysisCache {
@@ -53,46 +57,62 @@ impl AnalysisCache {
     /// The cached analysis of the Source Image `id`, or `None` if there is none or it can't
     /// be read back.
     pub(crate) fn load(&self, id: SourceImageId) -> Option<Analysis> {
-        let bytes = std::fs::read(self.entry_path(id)).ok()?;
-        let rest = bytes.strip_prefix(MAGIC)?;
-        let rest = rest.strip_prefix(id.as_bytes())?;
-        let (color_signature, pixels) = rest.split_at_checked(ColorSignature::BYTE_LENGTH)?;
+        let bytes = std::fs::read(self.entry_path("analysis", id)).ok()?;
+        let color_signature = bytes.strip_prefix(MAGIC)?.strip_prefix(id.as_bytes())?;
         Some(Analysis {
             color_signature: ColorSignature::from_bytes(color_signature)?,
-            rendered_source_image: RgbImage::from_raw(
-                RENDERED_TILE_SIZE,
-                RENDERED_TILE_SIZE,
-                pixels.to_vec(),
-            )
-            .filter(|image| image.as_raw().len() == pixels.len())?,
         })
     }
 
     /// Keeps `analysis` for the Source Image `id`. The cache only saves work, so a failure
     /// to write is ignored; the entry is recomputed next time.
     pub(crate) fn store(&self, id: SourceImageId, analysis: &Analysis) {
-        let _ = self.try_store(id, analysis);
+        let entry = [
+            MAGIC.as_slice(),
+            id.as_bytes(),
+            &analysis.color_signature.to_bytes(),
+        ];
+        let _ = self.try_store(&self.entry_path("analysis", id), &entry);
     }
 
-    fn try_store(&self, id: SourceImageId, analysis: &Analysis) -> std::io::Result<()> {
+    /// The cached thumbnail of the Source Image `id`, or `None` if there is none or it can't
+    /// be read back.
+    pub(crate) fn load_thumbnail(&self, id: SourceImageId) -> Option<RgbImage> {
+        let bytes = std::fs::read(self.entry_path("thumbnails", id)).ok()?;
+        let pixels = bytes
+            .strip_prefix(THUMBNAIL_MAGIC)?
+            .strip_prefix(id.as_bytes())?;
+        RgbImage::from_raw(THUMBNAIL_SIZE, THUMBNAIL_SIZE, pixels.to_vec())
+            .filter(|thumbnail| thumbnail.as_raw().len() == pixels.len())
+    }
+
+    /// Keeps `thumbnail` for the Source Image `id`, ignoring any failure like [`Self::store`].
+    pub(crate) fn store_thumbnail(&self, id: SourceImageId, thumbnail: &RgbImage) {
+        let entry = [
+            THUMBNAIL_MAGIC.as_slice(),
+            id.as_bytes(),
+            thumbnail.as_raw(),
+        ];
+        let _ = self.try_store(&self.entry_path("thumbnails", id), &entry);
+    }
+
+    fn try_store(&self, path: &Path, parts: &[&[u8]]) -> std::io::Result<()> {
         if !self.writable {
             return Ok(());
         }
-        let path = self.entry_path(id);
         let folder = path.parent().expect("entries sit in a folder");
         std::fs::create_dir_all(folder)?;
         // Written whole and then moved into place, so a concurrent build never reads half.
         let mut file = tempfile::NamedTempFile::new_in(folder)?;
-        file.write_all(MAGIC)?;
-        file.write_all(id.as_bytes())?;
-        file.write_all(&analysis.color_signature.to_bytes())?;
-        file.write_all(analysis.rendered_source_image.as_raw())?;
+        for part in parts {
+            file.write_all(part)?;
+        }
         file.persist(path)?;
         Ok(())
     }
 
-    fn entry_path(&self, id: SourceImageId) -> PathBuf {
-        self.folder.join("analysis").join(id.to_string())
+    fn entry_path(&self, kind: &str, id: SourceImageId) -> PathBuf {
+        self.folder.join(kind).join(id.to_string())
     }
 }
 

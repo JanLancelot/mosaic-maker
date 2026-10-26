@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 
-use image::imageops;
+use image::imageops::{self, FilterType};
 use image::{ImageReader, RgbImage};
 use rayon::prelude::*;
 
@@ -11,9 +11,9 @@ use crate::assign::{self, Assignment};
 use crate::cache::AnalysisCache;
 use crate::cancel::CancelToken;
 use crate::color_signature::ColorSignature;
-use crate::mosaic::{Mosaic, RENDERED_TILE_SIZE, Tile};
+use crate::mosaic::{Mosaic, RENDERED_TILE_SIZE, SourceImage, Tile};
 use crate::scan;
-use crate::warning::{BuildReport, BuildStats, BuildWarning, SkipReason};
+use crate::warning::{BuildReport, BuildStats, BuildWarning};
 
 /// The Repeat Radius a new build starts with.
 pub const DEFAULT_REPEAT_RADIUS: u32 = 3;
@@ -65,6 +65,8 @@ pub enum BuildError {
     TilesAcrossOutOfRange { width: u32 },
     #[error("the Target Image is too short for a single row of {tiles_across} Tiles Across")]
     TargetImageTooShort { tiles_across: u32 },
+    #[error("{} changed or disappeared during the build", .path.display())]
+    SourceImageChanged { path: PathBuf },
     #[error("the build was cancelled")]
     Cancelled,
 }
@@ -184,24 +186,54 @@ pub fn build(
     )?;
     warnings.extend(assignment_warnings);
 
-    reporter.report(Stage::Rendering, 0, 1)?;
-    let rendered = render(&grid, &assignment, &analysed);
-    reporter.report(Stage::Rendering, 1, 1)?;
-
-    // Keep only the Source Images that fill at least one Tile.
-    let mut used: HashMap<usize, usize> = HashMap::new();
-    let mut source_images = Vec::new();
-    let tile_source_images = assignment
+    // Keep only the Source Images that fill at least one Tile, in the order they first do.
+    let mut used_indices: HashMap<usize, usize> = HashMap::new();
+    let mut used: Vec<&AnalysedSourceImage> = Vec::new();
+    let tile_source_images: Vec<usize> = assignment
         .iter()
         .map(|&analysed_index| {
-            *used.entry(analysed_index).or_insert_with(|| {
-                source_images.push(analysed[analysed_index].source_image.clone());
-                source_images.len() - 1
+            *used_indices.entry(analysed_index).or_insert_with(|| {
+                used.push(&analysed[analysed_index]);
+                used.len() - 1
             })
         })
         .collect();
 
+    let pictures = in_parallel(&used, Stage::Rendering, &mut reporter, |analysed| {
+        let thumbnail = analysis::thumbnail(
+            source_library,
+            &analysed.last_known_path,
+            analysed.id,
+            cache,
+        )
+        .ok_or_else(|| BuildError::SourceImageChanged {
+            path: analysed.last_known_path.clone(),
+        })?;
+        let rendered = imageops::resize(
+            &thumbnail,
+            RENDERED_TILE_SIZE,
+            RENDERED_TILE_SIZE,
+            FilterType::Lanczos3,
+        );
+        Ok((thumbnail, rendered))
+    })?
+    .into_iter()
+    .collect::<Result<Vec<_>, BuildError>>()?;
+    let rendered = render(
+        &grid,
+        &tile_source_images,
+        pictures.iter().map(|(_, rendered)| rendered),
+    );
+    let source_images = used
+        .iter()
+        .zip(pictures)
+        .map(|(analysed, (thumbnail, _))| {
+            SourceImage::new(analysed.id, analysed.last_known_path.clone(), thumbnail)
+        })
+        .collect();
+
     let mosaic = Mosaic::new(
+        std::path::absolute(source_library).unwrap_or_else(|_| source_library.to_owned()),
         grid.tiles_across,
         grid.rows,
         source_images,
@@ -243,15 +275,19 @@ fn analyse_source_library(
     let files = scan::files_in(source_library, warnings).map_err(BuildError::SourceLibrary)?;
 
     let total = files.len();
-    reporter.report(Stage::AnalysingSourceImages, 0, total)?;
-    let outcomes = analyse_in_parallel(source_library, &files, cache, reporter)?;
+    let outcomes = in_parallel(
+        &files,
+        Stage::AnalysingSourceImages,
+        reporter,
+        |relative_path| analysis::analyse_file(source_library, relative_path, cache),
+    )?;
 
     let mut analysed: Vec<AnalysedSourceImage> = Vec::with_capacity(total);
     let mut seen = HashSet::new();
     for (relative_path, outcome) in files.into_iter().zip(outcomes) {
         match outcome {
             Ok(source_image) => {
-                if seen.insert(source_image.source_image.id()) {
+                if seen.insert(source_image.id) {
                     analysed.push(source_image);
                 }
             }
@@ -264,57 +300,64 @@ fn analyse_source_library(
     Ok(analysed)
 }
 
-/// Analyses `files` across all cores, returning their outcomes in the same order. Progress
-/// is reported from the calling thread as each file completes.
-fn analyse_in_parallel(
-    source_library: &Path,
-    files: &[PathBuf],
-    cache: &AnalysisCache,
+/// Runs `work` on every one of `items` across all cores, returning the results in the same
+/// order. Progress through `stage` is reported from the calling thread as each item completes.
+fn in_parallel<T: Sync, R: Send>(
+    items: &[T],
+    stage: Stage,
     reporter: &mut Reporter<'_, impl FnMut(Progress)>,
-) -> Result<Vec<Result<AnalysedSourceImage, SkipReason>>, BuildError> {
-    let cancel = reporter.cancel;
+    work: impl Fn(&T) -> R + Sync,
+) -> Result<Vec<R>, BuildError> {
+    reporter.report(stage, 0, items.len())?;
+    let (cancel, work) = (reporter.cancel, &work);
     let (sender, completions) = mpsc::channel();
     std::thread::scope(|scope| {
         let workers = scope.spawn(move || {
-            files
+            items
                 .par_iter()
-                .map_with(sender, |sender, relative_path| {
+                .map_with(sender, |sender, item| {
                     if cancel.is_cancelled() {
                         return None;
                     }
-                    let outcome = analysis::analyse_file(source_library, relative_path, cache);
+                    let result = work(item);
                     // The receiver only goes away once the build is cancelled.
                     let _ = sender.send(());
-                    Some(outcome)
+                    Some(result)
                 })
                 .collect::<Option<Vec<_>>>()
         });
         // Ends once every worker is done and has dropped its sender.
         let mut reported = Ok(());
         for (done, ()) in completions.iter().enumerate() {
-            reported = reporter.report(Stage::AnalysingSourceImages, done + 1, files.len());
+            reported = reporter.report(stage, done + 1, items.len());
             if reported.is_err() {
                 break;
             }
         }
         drop(completions);
-        let outcomes = workers
+        let results = workers
             .join()
             .unwrap_or_else(|panic| std::panic::resume_unwind(panic));
         reported?;
-        outcomes.ok_or(BuildError::Cancelled)
+        results.ok_or(BuildError::Cancelled)
     })
 }
 
-fn render(grid: &Grid, assignment: &[usize], analysed: &[AnalysedSourceImage]) -> RgbImage {
+/// Draws each Tile as `rendered_source_images[tile_source_images[tile]]`.
+fn render<'a>(
+    grid: &Grid,
+    tile_source_images: &[usize],
+    rendered_source_images: impl Iterator<Item = &'a RgbImage>,
+) -> RgbImage {
+    let rendered_source_images: Vec<&RgbImage> = rendered_source_images.collect();
     let mut rendered = RgbImage::new(
         grid.tiles_across * RENDERED_TILE_SIZE,
         grid.rows * RENDERED_TILE_SIZE,
     );
-    for (tile, &analysed_index) in grid.tiles().zip(assignment) {
+    for (tile, &index) in grid.tiles().zip(tile_source_images) {
         imageops::replace(
             &mut rendered,
-            &analysed[analysed_index].analysis.rendered_source_image,
+            rendered_source_images[index],
             i64::from(tile.column * RENDERED_TILE_SIZE),
             i64::from(tile.row * RENDERED_TILE_SIZE),
         );
