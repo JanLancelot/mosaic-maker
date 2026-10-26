@@ -114,7 +114,6 @@ struct ShownMosaic {
 struct Pinned {
     /// The Tile that was clicked.
     tile: Tile,
-    id: SourceImageId,
     /// Every Tile the Source Image fills, all highlighted.
     tiles: Vec<Tile>,
     preview: Preview,
@@ -391,7 +390,7 @@ impl ShownMosaic {
         if viewport.tile_side() * ctx.pixels_per_point() > DETAILED_TILE_PIXELS {
             for tile in viewport.visible_tiles(screen) {
                 let source_image = source_image_at(&self.mosaic, tile);
-                if let Some(texture) = self.thumbnails.texture(ctx, source_image, false) {
+                if let Some(texture) = self.thumbnails.texture_if_ready(ctx, source_image) {
                     painter.image(
                         texture.id(),
                         egui_rect(viewport.tile_rect(tile)),
@@ -423,11 +422,9 @@ impl ShownMosaic {
             && !response.dragged()
         {
             let source_image = source_image_at(&self.mosaic, tile);
-            let thumbnail = self.thumbnails.texture(ctx, source_image, true);
+            let thumbnail = self.thumbnails.texture(ctx, source_image);
             response.on_hover_ui_at_pointer(|ui| {
-                if let Some(thumbnail) = thumbnail {
-                    ui.image(&thumbnail);
-                }
+                ui.image(&thumbnail);
                 ui.label(source_image.file_name());
             });
         }
@@ -439,7 +436,9 @@ impl ShownMosaic {
     /// Pins the inspector to the Source Image filling `tile`, and starts reading its original.
     fn pin(&mut self, ctx: &egui::Context, tile: Tile) {
         let id = source_image_at(&self.mosaic, tile).id();
-        if self.pinned.as_ref().is_some_and(|pinned| pinned.id == id) {
+        if let Some(pinned) = &self.pinned
+            && source_image_at(&self.mosaic, pinned.tile).id() == id
+        {
             return;
         }
         let (sender, preview) = channel();
@@ -456,7 +455,6 @@ impl ShownMosaic {
         });
         self.pinned = Some(Pinned {
             tile,
-            id,
             tiles: self.mosaic.tiles_filled_by(id),
             preview: Preview::Loading(preview),
             reveal_error: None,
@@ -485,24 +483,21 @@ impl ShownMosaic {
 
         ui.heading("Source Image");
         ui.add_space(8.0);
-        let preview = match &pinned.preview {
-            Preview::Original(texture) => Some(texture.clone()),
-            Preview::Loading(_) | Preview::Unavailable => {
-                self.thumbnails.texture(ui.ctx(), source_image, true)
-            }
+        let (preview, caption) = match &pinned.preview {
+            Preview::Original(texture) => (texture.clone(), None),
+            Preview::Loading(_) => (
+                self.thumbnails.texture(ui.ctx(), source_image),
+                Some("Loading the original…"),
+            ),
+            Preview::Unavailable => (
+                self.thumbnails.texture(ui.ctx(), source_image),
+                Some("The original couldn't be read, so this is its thumbnail."),
+            ),
         };
-        if let Some(preview) = preview {
-            let side = ui.available_width();
-            ui.add(egui::Image::new(&preview).max_size(egui::vec2(side, side)));
-        }
-        match pinned.preview {
-            Preview::Loading(_) => {
-                ui.weak("Loading the original…");
-            }
-            Preview::Unavailable => {
-                ui.weak("The original couldn't be read, so this is its thumbnail.");
-            }
-            Preview::Original(_) => {}
+        let side = ui.available_width();
+        ui.add(egui::Image::new(&preview).max_size(egui::vec2(side, side)));
+        if let Some(caption) = caption {
+            ui.weak(caption);
         }
         ui.add_space(8.0);
 
@@ -541,33 +536,37 @@ impl ThumbnailTextures {
         self.drawn.clear();
     }
 
-    /// The texture of `source_image`'s thumbnail. A new one is uploaded right away if
-    /// `urgent`, otherwise only while this frame's uploads last.
-    fn texture(
+    /// The texture of `source_image`'s thumbnail, uploaded now if it isn't yet.
+    fn texture(&mut self, ctx: &egui::Context, source_image: &SourceImage) -> egui::TextureHandle {
+        let id = source_image.id();
+        self.drawn.insert(id);
+        self.textures
+            .entry(id)
+            .or_insert_with(|| {
+                ctx.load_texture(
+                    format!("thumbnail {id}"),
+                    color_image(source_image.thumbnail()),
+                    egui::TextureOptions::LINEAR,
+                )
+            })
+            .clone()
+    }
+
+    /// Like [`Self::texture`], but a texture not uploaded yet is only uploaded while this
+    /// frame's uploads last.
+    fn texture_if_ready(
         &mut self,
         ctx: &egui::Context,
         source_image: &SourceImage,
-        urgent: bool,
     ) -> Option<egui::TextureHandle> {
-        let id = source_image.id();
-        self.drawn.insert(id);
-        if let Some(texture) = self.textures.get(&id) {
-            return Some(texture.clone());
-        }
-        if !urgent {
+        if !self.textures.contains_key(&source_image.id()) {
             if self.uploads_left == 0 {
                 self.waiting = true;
                 return None;
             }
             self.uploads_left -= 1;
         }
-        let texture = ctx.load_texture(
-            format!("thumbnail {id}"),
-            color_image(source_image.thumbnail()),
-            egui::TextureOptions::LINEAR,
-        );
-        self.textures.insert(id, texture.clone());
-        Some(texture)
+        Some(self.texture(ctx, source_image))
     }
 
     /// Lets go of textures no longer needed. Returns whether thumbnails are still waiting to
