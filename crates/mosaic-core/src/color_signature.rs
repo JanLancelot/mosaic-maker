@@ -2,7 +2,7 @@ use std::sync::LazyLock;
 
 use image::RgbImage;
 
-/// The signature divides a square region into `GRID` × `GRID` parts.
+/// A Color Signature divides a square region into `GRID` × `GRID` parts.
 const GRID: usize = 3;
 
 /// A color in CIELAB (D65).
@@ -56,14 +56,14 @@ static SRGB_TO_LINEAR: LazyLock<[f32; 256]> = LazyLock::new(|| {
 /// The color layout of a square region: the average color of each part of a grid laid over
 /// it, in CIELAB.
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct Signature([Lab; GRID * GRID]);
+pub(crate) struct ColorSignature([Lab; GRID * GRID]);
 
-impl Signature {
-    /// The signature of the square of `image` with top-left corner (`left`, `top`) and side
+impl ColorSignature {
+    /// The Color Signature of the square of `image` with top-left corner (`left`, `top`) and side
     /// `side`, all in pixels. A pixel belongs to whichever part contains its center.
     pub(crate) fn of_square(image: &RgbImage, left: f64, top: f64, side: f64) -> Self {
         let part = side / GRID as f64;
-        Signature(std::array::from_fn(|i| {
+        ColorSignature(std::array::from_fn(|i| {
             let (column, row) = (i % GRID, i / GRID);
             let columns = pixel_span(left + column as f64 * part, part, image.width());
             let rows = pixel_span(top + row as f64 * part, part, image.height());
@@ -71,9 +71,9 @@ impl Signature {
         }))
     }
 
-    /// How different two signatures look: the sum of the perceptual distances between
+    /// How different two Color Signatures look: the sum of the perceptual distances between
     /// their corresponding parts.
-    pub(crate) fn distance(&self, other: &Signature) -> f32 {
+    pub(crate) fn distance(&self, other: &ColorSignature) -> f32 {
         self.0
             .iter()
             .zip(&other.0)

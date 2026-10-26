@@ -5,9 +5,11 @@
 root=$(cd "$(dirname "$0")/.." && pwd)
 tab=$(printf '\t')
 
-# Avoided terms with an unrelated, legitimate meaning in code.
+# Avoided terms with an unrelated, legitimate meaning in code, separated by `|`.
 #   result: Rust's Result type.
-exempt='result'
+#   hash: Source Image identity is a content hash (ADR 0003).
+#   average color: a Color Signature is built from the average colors of its parts.
+exempt='result|hash|average color'
 
 # One "avoided<TAB>Glossary Term" line per avoided term.
 pairs=$(awk '
@@ -20,7 +22,7 @@ pairs=$(awk '
 
 status=0
 while IFS="$tab" read -r avoided term; do
-    case " $exempt " in *" $avoided "*) continue ;; esac
+    case "|$exempt|" in *"|$avoided|"*) continue ;; esac
     word=$(printf '%s' "$avoided" | sed 's/ /[ _-]?/g')
     if grep -rniE "(^|[^a-z0-9])${word}s?([^a-z0-9]|$)" "$root/crates" --include='*.rs'; then
         echo "Use the glossary term \"$term\" instead of \"$avoided\" (GLOSSARY.md)." >&2

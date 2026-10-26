@@ -4,8 +4,8 @@
 
 mod build;
 mod cancel;
+mod color_signature;
 mod mosaic;
-mod signature;
 
 pub use build::{BuildError, BuildSettings, Progress, Stage, build};
 pub use cancel::CancelToken;

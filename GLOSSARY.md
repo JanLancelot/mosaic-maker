@@ -20,6 +20,10 @@ _Avoid_: Reference folder, image pool
 One square grid position in a Mosaic. A Tile is a position, never the picture that fills it.
 _Avoid_: Cell, slot
 
+**Color Signature**:
+The color layout of a Source Image, or of the Target Image within one Tile: which colors sit where across it. A Tile is filled by a Source Image whose Color Signature is close to its own.
+_Avoid_: Fingerprint, hash, descriptor, average color
+
 **Mosaic**:
 A grid of Tiles that recreates a Target Image, where each Tile is filled by one Source Image. It persists, so it can be reopened and inspected later.
 _Avoid_: Output, result, collage

@@ -5,8 +5,8 @@ use image::imageops::{self, FilterType};
 use image::{ImageReader, RgbImage};
 
 use crate::cancel::CancelToken;
+use crate::color_signature::ColorSignature;
 use crate::mosaic::{Mosaic, RENDERED_TILE_SIZE, SourceImage, Tile};
-use crate::signature::Signature;
 
 /// The choices that shape a Mosaic.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -50,7 +50,7 @@ pub enum BuildError {
 /// A Source Image together with what the build needs to know about it.
 struct AnalysedSourceImage {
     source_image: SourceImage,
-    signature: Signature,
+    color_signature: ColorSignature,
     /// The center-cropped Source Image scaled to `RENDERED_TILE_SIZE`.
     rendered_source_image: RgbImage,
 }
@@ -141,13 +141,13 @@ pub fn build(
     reporter.report(Stage::MatchingTiles, 0, tile_count)?;
     let mut assignment = Vec::with_capacity(tile_count);
     for (index, tile) in grid.tiles().enumerate() {
-        let tile_signature = Signature::of_square(
+        let tile_color_signature = ColorSignature::of_square(
             &target,
             f64::from(tile.column) * grid.tile_side,
             f64::from(tile.row) * grid.tile_side,
             grid.tile_side,
         );
-        assignment.push(best_match(&analysed, &tile_signature));
+        assignment.push(best_match(&analysed, &tile_color_signature));
         reporter.report(Stage::MatchingTiles, index + 1, tile_count)?;
     }
 
@@ -217,7 +217,7 @@ fn analyse(source_image: SourceImage, image: &RgbImage) -> AnalysedSourceImage {
     let cropped = imageops::crop_imm(image, left, top, side, side).to_image();
     AnalysedSourceImage {
         source_image,
-        signature: Signature::of_square(&cropped, 0.0, 0.0, f64::from(side)),
+        color_signature: ColorSignature::of_square(&cropped, 0.0, 0.0, f64::from(side)),
         rendered_source_image: imageops::resize(
             &cropped,
             RENDERED_TILE_SIZE,
@@ -227,12 +227,12 @@ fn analyse(source_image: SourceImage, image: &RgbImage) -> AnalysedSourceImage {
     }
 }
 
-/// The index of the Source Image that looks most like `tile_signature`. Ties go to the
+/// The index of the Source Image that looks most like `tile_color_signature`. Ties go to the
 /// first in file name order.
-fn best_match(analysed: &[AnalysedSourceImage], tile_signature: &Signature) -> usize {
+fn best_match(analysed: &[AnalysedSourceImage], tile_color_signature: &ColorSignature) -> usize {
     analysed
         .iter()
-        .map(|candidate| candidate.signature.distance(tile_signature))
+        .map(|candidate| candidate.color_signature.distance(tile_color_signature))
         .enumerate()
         .min_by(|(_, a), (_, b)| a.total_cmp(b))
         .map(|(index, _)| index)
