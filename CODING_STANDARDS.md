@@ -8,7 +8,7 @@ Judgement calls for review. Rules that a tool can check (formatting, lints, `mos
 
 ## Source Images stay unaltered
 
-A Source Image's pixels are only ever center-cropped and scaled. This applies on every path: rendering, thumbnails, inspector previews and PNG export (ADR 0002). Flag any color, brightness, blend or filter operation applied to Source Image pixels.
+A Source Image's pixels are only ever cropped and scaled, with any transparency shown on white. This applies on every path: rendering, Thumbnails, the Original shown in the inspector and PNG export (ADR 0002). Flag any color, brightness, blend or filter operation applied to Source Image pixels.
 
 ## Glossary vocabulary
 
