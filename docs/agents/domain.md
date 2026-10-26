@@ -42,6 +42,8 @@ Multi-context repo (presence of `GLOSSARY-MAP.md` at the root):
 
 When your output names a domain concept (in an issue title, a refactor proposal, a hypothesis, a test name), use the term as defined in `GLOSSARY.md`. Don't drift to synonyms the glossary explicitly avoids.
 
+Every term listed under _Avoid_ is banned from Rust code, `AGENTS.md` and `CODING_STANDARDS.md` by `scripts/check-glossary-terms.sh`. Adding one means renaming whatever uses it, or exempting it in the script with a reason.
+
 If the concept you need isn't in the glossary yet, that's a signal: either you're inventing language the project doesn't use (reconsider) or there's a real gap (note it for `/domain-modeling`).
 
 ## Flag ADR conflicts
