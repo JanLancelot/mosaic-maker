@@ -13,7 +13,7 @@ One picture from the Source Library that can fill Tiles in a Mosaic. It is ident
 _Avoid_: Reference image, tile image, photo
 
 **Source Library**:
-The folder of Source Images a Mosaic is built from.
+The folder of Source Images a Mosaic is built from, including its subfolders. Hidden files and folders are not part of it.
 _Avoid_: Reference folder, image pool
 
 **Tile**:
@@ -35,3 +35,7 @@ _Avoid_: Spacing, cooldown
 **Tiles Across**:
 The number of Tile columns in a Mosaic. It sets how fine the Mosaic is, and the row count follows from the Target Image's shape.
 _Avoid_: Resolution, grid size
+
+**Seed**:
+The number that decides which of the equally valid Mosaics a build makes. The same Target Image, Source Library, Tiles Across, Repeat Radius and Seed always give the same Mosaic.
+_Avoid_: Variation
