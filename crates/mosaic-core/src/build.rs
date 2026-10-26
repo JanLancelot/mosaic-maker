@@ -147,6 +147,7 @@ pub fn build(
     let target = open_image(target_image).map_err(BuildError::TargetImage)?;
     let grid = Grid::over(&target, settings.tiles_across)?;
 
+    let cache = &cache.kept_out_of(source_library);
     let mut warnings = Vec::new();
     let analysed = analyse_source_library(source_library, cache, &mut warnings, &mut reporter)?;
     if analysed.is_empty() {

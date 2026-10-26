@@ -425,6 +425,34 @@ fn a_build_writes_nothing_inside_the_source_library() {
 }
 
 #[test]
+fn a_cache_folder_inside_the_source_library_is_never_written() {
+    let fixture = Fixture::new();
+    fixture.add_source_image("red.png", &solid(8, 8, RED));
+    let target_image = fixture.set_target_image(&solid(10, 10, RED));
+    let before = snapshot(&fixture.source_library());
+    let settings = BuildSettings {
+        tiles_across: 1,
+        repeat_radius: DEFAULT_REPEAT_RADIUS,
+        seed: 0,
+    };
+    let cache = AnalysisCache::in_folder(fixture.source_library().join("nested/cache"));
+
+    for _ in 0..2 {
+        build(
+            &target_image,
+            &fixture.source_library(),
+            &settings,
+            &cache,
+            |_| {},
+            &CancelToken::new(),
+        )
+        .unwrap();
+    }
+
+    assert_eq!(snapshot(&fixture.source_library()), before);
+}
+
+#[test]
 fn a_corrupt_cache_entry_is_recomputed_rather_than_failing_the_build() {
     let fixture = Fixture::new();
     fixture.add_source_image("red.png", &solid(8, 8, RED));
