@@ -607,11 +607,17 @@ fn reveal_in_finder(path: &Path) -> std::io::Result<()> {
         command = Command::new("xdg-open");
         command.arg(path.parent().unwrap_or(path));
     }
-    let status = command.status()?;
-    if status.success() {
+    let ran = command.output()?;
+    if ran.status.success() {
         Ok(())
     } else {
-        Err(std::io::Error::other(status.to_string()))
+        let stderr = String::from_utf8_lossy(&ran.stderr);
+        let reason = stderr.trim();
+        Err(std::io::Error::other(if reason.is_empty() {
+            ran.status.to_string()
+        } else {
+            reason.to_owned()
+        }))
     }
 }
 
