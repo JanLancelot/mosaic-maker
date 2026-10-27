@@ -36,6 +36,14 @@ _Avoid_: Fingerprint, hash, descriptor, average color
 A grid of Tiles that recreates a Target Image, where each Tile is filled by one Source Image. It persists, so it can be reopened and inspected later.
 _Avoid_: Output, result, collage
 
+**Mosaic File**:
+The single `.mosaic` file a Mosaic is saved to. It holds everything needed to reopen and inspect the Mosaic, including every Thumbnail, so it opens even without its Source Library.
+_Avoid_: Project, document, save file
+
+**Export**:
+A PNG of a Mosaic drawn at a chosen Tile Size, each Tile from its Source Image's Original where that is reachable and from its Thumbnail where it isn't.
+_Avoid_: Snapshot
+
 **Repeat Radius**:
 The distance in Tiles within which the same Source Image should not fill two Tiles.
 _Avoid_: Spacing, cooldown
@@ -43,6 +51,10 @@ _Avoid_: Spacing, cooldown
 **Tiles Across**:
 The number of Tile columns in a Mosaic. It sets how fine the Mosaic is, and the row count follows from the Target Image's shape.
 _Avoid_: Resolution, grid size
+
+**Tile Size**:
+The side, in pixels, that each Tile is drawn at in an Export. Tiles Across sets how many Tiles there are; Tile Size sets how large each is drawn.
+_Avoid_: Pixels per Tile, export resolution
 
 **Seed**:
 The number that decides which of the equally valid Mosaics a build makes. The same Target Image, Source Library, Tiles Across, Repeat Radius and Seed always give the same Mosaic.

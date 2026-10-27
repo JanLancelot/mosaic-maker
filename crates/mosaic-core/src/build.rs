@@ -233,9 +233,11 @@ pub fn build(
         })
         .collect();
 
+    let absolute = |path: &Path| std::path::absolute(path).unwrap_or_else(|_| path.to_owned());
     let mosaic = Mosaic::new(
-        std::path::absolute(source_library).unwrap_or_else(|_| source_library.to_owned()),
-        grid.tiles_across,
+        absolute(target_image),
+        absolute(source_library),
+        settings.clone(),
         grid.rows,
         source_images,
         tile_source_images,

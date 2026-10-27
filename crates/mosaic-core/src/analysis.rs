@@ -97,6 +97,21 @@ pub(crate) fn original(path: &Path, id: SourceImageId, max_side: u32) -> Option<
     ))
 }
 
+/// The Original of the Source Image `id`, last found at `path`, as a Tile shows it:
+/// center-cropped and scaled to `side` pixels square. `None` if it is unreachable.
+pub(crate) fn original_as_tile(path: &Path, id: SourceImageId, side: u32) -> Option<RgbImage> {
+    let square = center_square(&decode(&read_if_still(path, id)?).ok()?);
+    Some(scaled_to(&square, side))
+}
+
+/// `square` scaled to `side` pixels square, or left as it is if it is that size already.
+pub(crate) fn scaled_to(square: &RgbImage, side: u32) -> RgbImage {
+    if square.dimensions() == (side, side) {
+        return square.clone();
+    }
+    imageops::resize(square, side, side, FilterType::Lanczos3)
+}
+
 /// The contents of the file at `path`, if it can be read and still holds the Source Image
 /// `id`.
 fn read_if_still(path: &Path, id: SourceImageId) -> Option<Vec<u8>> {
@@ -157,5 +172,5 @@ fn center_square(image: &RgbImage) -> RgbImage {
 }
 
 fn scaled_to_thumbnail(square: &RgbImage) -> RgbImage {
-    imageops::resize(square, THUMBNAIL_SIZE, THUMBNAIL_SIZE, FilterType::Lanczos3)
+    scaled_to(square, THUMBNAIL_SIZE)
 }
