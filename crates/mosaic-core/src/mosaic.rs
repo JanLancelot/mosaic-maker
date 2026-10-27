@@ -196,15 +196,9 @@ impl Mosaic {
         else {
             return Vec::new();
         };
-        let tiles_across = self.tiles_across() as usize;
-        self.tile_source_images
-            .iter()
-            .enumerate()
-            .filter(|&(_, &index)| index == wanted)
-            .map(|(i, _)| Tile {
-                column: (i % tiles_across) as u32,
-                row: (i / tiles_across) as u32,
-            })
+        self.tiles_with_source_images()
+            .filter(|&(_, index)| index == wanted)
+            .map(|(tile, _)| tile)
             .collect()
     }
 
@@ -221,5 +215,20 @@ impl Mosaic {
     /// Row-major: the index into [`Self::source_images`] filling each Tile.
     pub(crate) fn tile_source_images(&self) -> &[usize] {
         &self.tile_source_images
+    }
+
+    /// Every Tile, row by row, with the index into [`Self::source_images`] filling it.
+    pub(crate) fn tiles_with_source_images(&self) -> impl Iterator<Item = (Tile, usize)> {
+        let tiles_across = self.tiles_across() as usize;
+        self.tile_source_images
+            .iter()
+            .enumerate()
+            .map(move |(i, &index)| {
+                let tile = Tile {
+                    column: (i % tiles_across) as u32,
+                    row: (i / tiles_across) as u32,
+                };
+                (tile, index)
+            })
     }
 }

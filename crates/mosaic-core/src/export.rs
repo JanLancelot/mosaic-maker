@@ -20,6 +20,13 @@ pub struct ExportReport {
     pub tiles_from_thumbnails: Vec<Tile>,
 }
 
+/// A Source Image as its Tiles are drawn in an export.
+enum Picture {
+    Original(RgbImage),
+    /// Its Thumbnail, since its Original is unreachable.
+    Thumbnail(RgbImage),
+}
+
 /// Why a Mosaic couldn't be exported.
 #[derive(Debug, thiserror::Error)]
 pub enum ExportError {
@@ -47,8 +54,7 @@ impl Mosaic {
             return Err(ExportError::TooLarge { tile_size });
         }
 
-        // Each Source Image as its Tiles show it, and whether that came from its Thumbnail.
-        let pictures: Vec<(RgbImage, bool)> = self
+        let pictures: Vec<Picture> = self
             .source_images()
             .par_iter()
             .map(|source_image| {
@@ -57,33 +63,30 @@ impl Mosaic {
                     source_image.id(),
                     tile_size,
                 ) {
-                    Some(original) => (original, false),
-                    None => (
-                        analysis::scaled_to(source_image.thumbnail(), tile_size),
-                        true,
-                    ),
+                    Some(original) => Picture::Original(original),
+                    None => {
+                        Picture::Thumbnail(analysis::scaled_to(source_image.thumbnail(), tile_size))
+                    }
                 }
             })
             .collect();
 
         let mut exported = RgbImage::new(width, height);
         let mut tiles_from_thumbnails = Vec::new();
-        let tiles_across = self.tiles_across() as usize;
-        for (i, &index) in self.tile_source_images().iter().enumerate() {
-            let tile = Tile {
-                column: (i % tiles_across) as u32,
-                row: (i / tiles_across) as u32,
+        for (tile, index) in self.tiles_with_source_images() {
+            let picture = match &pictures[index] {
+                Picture::Original(picture) => picture,
+                Picture::Thumbnail(picture) => {
+                    tiles_from_thumbnails.push(tile);
+                    picture
+                }
             };
-            let (picture, from_thumbnail) = &pictures[index];
             imageops::replace(
                 &mut exported,
                 picture,
                 i64::from(tile.column * tile_size),
                 i64::from(tile.row * tile_size),
             );
-            if *from_thumbnail {
-                tiles_from_thumbnails.push(tile);
-            }
         }
 
         persist::write_replacing(path, |writer| persist::write_png(writer, &exported))?;
