@@ -3,6 +3,7 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 
 use image::RgbImage;
+use image::imageops::{self, FilterType};
 
 use crate::analysis;
 use crate::build::BuildSettings;
@@ -205,6 +206,21 @@ impl Mosaic {
     /// The Mosaic drawn with each Tile `RENDERED_TILE_SIZE` pixels square.
     pub fn rendered(&self) -> &RgbImage {
         &self.rendered
+    }
+
+    /// The Mosaic as [`Self::rendered`] draws it, scaled down to fit within `max_side` pixels
+    /// square if it is larger, keeping its shape.
+    pub fn rendered_within(&self, max_side: u32) -> Cow<'_, RgbImage> {
+        match analysis::fitted_size(self.rendered.dimensions(), max_side) {
+            // A rendered Mosaic can be large, so this favours speed over sharpness.
+            Some((width, height)) => Cow::Owned(imageops::resize(
+                &self.rendered,
+                width,
+                height,
+                FilterType::Triangle,
+            )),
+            None => Cow::Borrowed(&self.rendered),
+        }
     }
 
     /// Every Source Image filling at least one Tile, each once.

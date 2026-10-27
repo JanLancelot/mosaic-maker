@@ -82,19 +82,22 @@ pub(crate) fn thumbnail(
 /// cropped.
 pub(crate) fn original(path: &Path, id: SourceImageId, max_side: u32) -> Option<RgbImage> {
     let image = decode(&read_if_still(path, id)?).ok()?;
-    let (width, height) = image.dimensions();
+    Some(match fitted_size(image.dimensions(), max_side) {
+        Some((width, height)) => imageops::resize(&image, width, height, FilterType::Lanczos3),
+        None => image,
+    })
+}
+
+/// The size an image of `size` is scaled down to so it fits within `max_side` pixels square,
+/// keeping its shape, or `None` if it fits already.
+pub(crate) fn fitted_size((width, height): (u32, u32), max_side: u32) -> Option<(u32, u32)> {
     let longest = width.max(height);
     if longest <= max_side {
-        return Some(image);
+        return None;
     }
     let fit =
         |side: u32| ((u64::from(side) * u64::from(max_side) / u64::from(longest)) as u32).max(1);
-    Some(imageops::resize(
-        &image,
-        fit(width),
-        fit(height),
-        FilterType::Lanczos3,
-    ))
+    Some((fit(width), fit(height)))
 }
 
 /// The Original of the Source Image `id`, last found at `path`, as a Tile shows it:

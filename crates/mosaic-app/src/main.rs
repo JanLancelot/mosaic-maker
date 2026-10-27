@@ -10,7 +10,6 @@ use std::sync::mpsc::{Receiver, TryRecvError, channel};
 
 use eframe::egui;
 use image::RgbImage;
-use image::imageops::{self, FilterType};
 use mosaic_core::{
     AnalysisCache, BuildError, BuildReport, BuildSettings, BuildStats, Built, CancelToken,
     DEFAULT_REPEAT_RADIUS, ExportReport, Mosaic, Progress, RENDERED_TILE_SIZE, ScreenPoint,
@@ -970,17 +969,5 @@ fn progress_bar(progress: Option<Progress>) -> egui::ProgressBar {
 
 /// The rendered Mosaic, scaled down if it exceeds the GPU's texture size limit.
 fn displayable_image(mosaic: &Mosaic, max_texture_side: u32) -> egui::ColorImage {
-    let rendered = mosaic.rendered();
-    let (width, height) = rendered.dimensions();
-    let scaled;
-    let image = if width.max(height) > max_texture_side {
-        let scale = f64::from(max_texture_side) / f64::from(width.max(height));
-        let scaled_width = ((f64::from(width) * scale) as u32).max(1);
-        let scaled_height = ((f64::from(height) * scale) as u32).max(1);
-        scaled = imageops::resize(rendered, scaled_width, scaled_height, FilterType::Triangle);
-        &scaled
-    } else {
-        rendered
-    };
-    color_image(image)
+    color_image(&mosaic.rendered_within(max_texture_side))
 }

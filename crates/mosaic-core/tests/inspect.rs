@@ -243,3 +243,26 @@ fn a_transparent_original_is_shown_on_white() {
     assert_eq!(*original.get_pixel(0, 0), Rgb([255, 255, 255]));
     assert_eq!(*original.get_pixel(15, 15), RED);
 }
+
+#[test]
+fn a_rendered_mosaic_larger_than_a_limit_is_scaled_down_to_fit_it_keeping_its_shape() {
+    let fixture = Fixture::new();
+    // 3 × 2 Tiles, so 96 × 64 pixels rendered.
+    let mosaic = striped_mosaic(&fixture);
+
+    let scaled = mosaic.rendered_within(48);
+
+    assert_eq!(scaled.dimensions(), (48, 32));
+    assert_eq!(*scaled.get_pixel(8, 8), RED);
+    assert_eq!(*scaled.get_pixel(24, 8), BLUE);
+    assert_eq!(*scaled.get_pixel(8, 24), GREEN);
+}
+
+#[test]
+fn a_rendered_mosaic_within_a_limit_is_left_at_its_own_size() {
+    let fixture = Fixture::new();
+    let mosaic = striped_mosaic(&fixture);
+
+    assert_eq!(*mosaic.rendered_within(96), *mosaic.rendered());
+    assert_eq!(*mosaic.rendered_within(4096), *mosaic.rendered());
+}
