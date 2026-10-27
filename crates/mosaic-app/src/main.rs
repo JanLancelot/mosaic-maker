@@ -42,6 +42,9 @@ const FULL_UV: egui::Rect = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui:
 /// Images are painted with this tint, which leaves their pixels as they are (ADR 0002).
 const UNTINTED: egui::Color32 = egui::Color32::WHITE;
 
+#[cfg(test)]
+mod smoke_tests;
+
 fn main() -> eframe::Result {
     eframe::run_native(
         "Mosaic Maker",
