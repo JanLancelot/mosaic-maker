@@ -9,22 +9,11 @@ use std::time::{Duration, Instant};
 
 use egui_kittest::Harness;
 use egui_kittest::kittest::{NodeT, Queryable};
-use image::{Rgb, RgbImage};
-use mosaic_core::{AnalysisCache, Tile};
+use mosaic_core::Tile;
 use tempfile::TempDir;
 
 use super::{MosaicMakerApp, egui, egui_rect};
-
-/// The Target Image is four stripes, each two Tiles wide, of these colors.
-const STRIPES: [(&str, Rgb<u8>); 4] = [
-    ("red.png", Rgb([220, 40, 40])),
-    ("green.png", Rgb([40, 180, 70])),
-    ("blue.png", Rgb([40, 90, 220])),
-    ("yellow.png", Rgb([240, 200, 40])),
-];
-const TILES_ACROSS: u32 = 8;
-const ROWS: u32 = 4;
-const TILE_PIXELS: u32 = 10;
+use crate::test_fixture::{Fixture, ROWS, TILES_ACROSS};
 
 /// How long a build, a file or reading an Original may take before a test gives up.
 const TIMEOUT: Duration = Duration::from_secs(60);
@@ -38,43 +27,7 @@ fn screenshots_folder() -> PathBuf {
     target.join("screenshots")
 }
 
-/// A Source Library with one solid Source Image per stripe, and a striped Target Image.
-struct Fixture {
-    dir: TempDir,
-}
-
 impl Fixture {
-    fn new() -> Self {
-        let fixture = Fixture {
-            dir: TempDir::new().unwrap(),
-        };
-        std::fs::create_dir(fixture.source_library()).unwrap();
-        for (file_name, color) in STRIPES {
-            RgbImage::from_pixel(64, 64, color)
-                .save(fixture.source_library().join(file_name))
-                .unwrap();
-        }
-        let stripe_pixels = TILES_ACROSS / STRIPES.len() as u32 * TILE_PIXELS;
-        let target_image =
-            RgbImage::from_fn(TILES_ACROSS * TILE_PIXELS, ROWS * TILE_PIXELS, |x, _| {
-                STRIPES[(x / stripe_pixels) as usize].1
-            });
-        target_image.save(fixture.target_image()).unwrap();
-        fixture
-    }
-
-    fn target_image(&self) -> PathBuf {
-        self.dir.path().join("target.png")
-    }
-
-    fn source_library(&self) -> PathBuf {
-        self.dir.path().join("library")
-    }
-
-    fn path(&self, file_name: &str) -> PathBuf {
-        self.dir.path().join(file_name)
-    }
-
     /// The window with the Target Image and Source Library chosen, built with Generate.
     fn built_app(&self) -> Harness<'static, MosaicMakerApp> {
         let app = MosaicMakerApp {
@@ -84,7 +37,7 @@ impl Fixture {
             // Each stripe is filled by its own Source Image throughout.
             repeat_radius: 0,
             seed: 0,
-            cache: AnalysisCache::in_folder(self.dir.path().join("cache")),
+            cache: self.cache(),
             ..MosaicMakerApp::default()
         };
         let mut harness = window(app);
