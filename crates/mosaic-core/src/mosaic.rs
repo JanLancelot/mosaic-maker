@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use image::RgbImage;
 
 use crate::analysis;
+use crate::build::BuildSettings;
 
 /// Side length, in pixels, of one Tile in a Mosaic's rendered image.
 pub const RENDERED_TILE_SIZE: u32 = 32;
@@ -31,6 +32,18 @@ impl SourceImageId {
 
     pub(crate) fn as_bytes(&self) -> &[u8; 32] {
         &self.0
+    }
+
+    /// The identity written as by [`Display`](fmt::Display): 64 lowercase hex digits.
+    pub(crate) fn from_hex(hex: &str) -> Option<Self> {
+        if hex.len() != 64 || !hex.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+            return None;
+        }
+        let mut bytes = [0; 32];
+        for (byte, pair) in bytes.iter_mut().zip(hex.as_bytes().chunks(2)) {
+            *byte = u8::from_str_radix(std::str::from_utf8(pair).ok()?, 16).ok()?;
+        }
+        Some(Self(bytes))
     }
 }
 
@@ -93,9 +106,11 @@ impl SourceImage {
 /// A grid of Tiles that recreates a Target Image, each Tile filled by one Source Image.
 #[derive(Debug, Clone)]
 pub struct Mosaic {
+    /// The Target Image the Mosaic recreates, as an absolute path.
+    target_image: PathBuf,
     /// The Source Library the Mosaic was built from, as an absolute path.
     source_library: PathBuf,
-    tiles_across: u32,
+    settings: BuildSettings,
     rows: u32,
     source_images: Vec<SourceImage>,
     /// Row-major: the index into `source_images` filling each Tile.
@@ -105,17 +120,22 @@ pub struct Mosaic {
 
 impl Mosaic {
     pub(crate) fn new(
+        target_image: PathBuf,
         source_library: PathBuf,
-        tiles_across: u32,
+        settings: BuildSettings,
         rows: u32,
         source_images: Vec<SourceImage>,
         tile_source_images: Vec<usize>,
         rendered: RgbImage,
     ) -> Self {
-        debug_assert_eq!(tile_source_images.len(), (tiles_across * rows) as usize);
+        debug_assert_eq!(
+            tile_source_images.len(),
+            (settings.tiles_across * rows) as usize
+        );
         Self {
+            target_image,
             source_library,
-            tiles_across,
+            settings,
             rows,
             source_images,
             tile_source_images,
@@ -123,8 +143,23 @@ impl Mosaic {
         }
     }
 
+    /// The Target Image the Mosaic recreates, as an absolute path.
+    pub fn target_image(&self) -> &Path {
+        &self.target_image
+    }
+
+    /// The Source Library the Mosaic was built from, as an absolute path.
+    pub fn source_library(&self) -> &Path {
+        &self.source_library
+    }
+
+    /// The settings the Mosaic was built with.
+    pub fn settings(&self) -> &BuildSettings {
+        &self.settings
+    }
+
     pub fn tiles_across(&self) -> u32 {
-        self.tiles_across
+        self.settings.tiles_across
     }
 
     pub fn rows(&self) -> u32 {
@@ -133,10 +168,10 @@ impl Mosaic {
 
     /// The Source Image filling `tile`, or `None` if the Tile is outside the grid.
     pub fn source_image_at(&self, tile: Tile) -> Option<&SourceImage> {
-        if tile.column >= self.tiles_across || tile.row >= self.rows {
+        if tile.column >= self.tiles_across() || tile.row >= self.rows {
             return None;
         }
-        let index = (tile.row * self.tiles_across + tile.column) as usize;
+        let index = (tile.row * self.tiles_across() + tile.column) as usize;
         Some(&self.source_images[self.tile_source_images[index]])
     }
 
@@ -161,7 +196,7 @@ impl Mosaic {
         else {
             return Vec::new();
         };
-        let tiles_across = self.tiles_across as usize;
+        let tiles_across = self.tiles_across() as usize;
         self.tile_source_images
             .iter()
             .enumerate()
@@ -176,5 +211,15 @@ impl Mosaic {
     /// The Mosaic drawn at `RENDERED_TILE_SIZE` pixels per Tile.
     pub fn rendered(&self) -> &RgbImage {
         &self.rendered
+    }
+
+    /// Every Source Image filling at least one Tile, each once.
+    pub(crate) fn source_images(&self) -> &[SourceImage] {
+        &self.source_images
+    }
+
+    /// Row-major: the index into [`Self::source_images`] filling each Tile.
+    pub(crate) fn tile_source_images(&self) -> &[usize] {
+        &self.tile_source_images
     }
 }

@@ -46,6 +46,11 @@ impl Fixture {
         image.save(path).unwrap();
     }
 
+    /// A path in the fixture's folder, outside the Source Library, for a file a test writes.
+    pub fn path(&self, file_name: &str) -> PathBuf {
+        self.dir.path().join(file_name)
+    }
+
     pub fn add_file(&self, relative_path: &str, contents: &[u8]) {
         let path = self.source_library().join(relative_path);
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
