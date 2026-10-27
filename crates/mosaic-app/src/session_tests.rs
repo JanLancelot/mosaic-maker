@@ -161,7 +161,7 @@ fn opening_restores_the_setup_it_was_built_from_and_replaces_the_shown_mosaic() 
 
     let rendered = session.poll().expect("the opened Mosaic is newly shown");
     assert_eq!(session.outcome(), Some(&Outcome::Opened(path)));
-    assert_eq!(*session.setup(), fixture.setup());
+    assert_eq!(*session.setup_mut(), fixture.setup());
     let shown = session.shown().unwrap();
     assert!(!Arc::ptr_eq(shown, &earlier));
     assert_eq!(rendered, *shown.rendered());

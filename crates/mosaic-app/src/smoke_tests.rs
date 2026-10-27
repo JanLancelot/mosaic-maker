@@ -9,10 +9,11 @@ use std::time::{Duration, Instant};
 
 use egui_kittest::Harness;
 use egui_kittest::kittest::{NodeT, Queryable};
-use mosaic_core::Tile;
+use mosaic_core::{AnalysisCache, BuildSettings, Tile};
 use tempfile::TempDir;
 
-use super::{MosaicMakerApp, egui, egui_rect};
+use super::{MosaicMakerApp, egui, egui_rect, max_texture_side};
+use crate::session::{Session, Setup};
 use crate::test_fixture::{Fixture, ROWS, TILES_ACROSS};
 
 /// How long a build, a file or reading an Original may take before a test gives up.
@@ -30,17 +31,7 @@ fn screenshots_folder() -> PathBuf {
 impl Fixture {
     /// The window with the Target Image and Source Library chosen, built with Generate.
     fn built_app(&self) -> Harness<'static, MosaicMakerApp> {
-        let app = MosaicMakerApp {
-            target_image: Some(self.target_image()),
-            source_library: Some(self.source_library()),
-            tiles_across: TILES_ACROSS,
-            // Each stripe is filled by its own Source Image throughout.
-            repeat_radius: 0,
-            seed: 0,
-            cache: self.cache(),
-            ..MosaicMakerApp::default()
-        };
-        let mut harness = window(app);
+        let mut harness = window(self.cache(), self.setup());
         harness.get_by_label("Generate").click();
         // Otherwise screenshots show Generate hovered.
         harness.remove_cursor();
@@ -51,11 +42,16 @@ impl Fixture {
     }
 }
 
-fn window(app: MosaicMakerApp) -> Harness<'static, MosaicMakerApp> {
+fn window(cache: AnalysisCache, setup: Setup) -> Harness<'static, MosaicMakerApp> {
     Harness::builder()
         .with_size(egui::vec2(1100.0, 600.0))
         .with_pixels_per_point(2.0)
-        .build_eframe(|_| app)
+        .build_eframe(|cc| MosaicMakerApp::new(&cc.egui_ctx, cache, setup))
+}
+
+/// The window's Session, to start what its File menu would through file dialogs.
+fn session<'a>(harness: &'a mut Harness<'_, MosaicMakerApp>) -> &'a mut Session {
+    &mut harness.state_mut().session
 }
 
 /// Steps the window in real time until `done`, since builds, files and Originals are read
@@ -140,16 +136,16 @@ fn run_until_status(harness: &mut Harness<'_, MosaicMakerApp>, status: &str) {
 fn a_reopened_mosaic_whose_source_library_is_gone_shows_thumbnails_and_cant_reveal_them() {
     let fixture = Fixture::new();
     let mut harness = fixture.built_app();
-    let ctx = harness.ctx.clone();
-    harness
-        .state_mut()
-        .save_to(&ctx, fixture.path("stripes.mosaic"));
+    session(&mut harness)
+        .save(fixture.path("stripes.mosaic"))
+        .unwrap();
     run_until_status(&mut harness, "Saved to");
     std::fs::remove_dir_all(fixture.source_library()).unwrap();
 
-    harness
-        .state_mut()
-        .open_from(&ctx, fixture.path("stripes.mosaic"));
+    let max_texture_side = max_texture_side(&harness.ctx);
+    session(&mut harness)
+        .open(fixture.path("stripes.mosaic"), max_texture_side)
+        .unwrap();
     run_until_status(&mut harness, "Opened");
     click_tile(&mut harness, Tile { column: 4, row: 1 });
     run_until(&mut harness, "the Original", |harness| {
@@ -169,10 +165,13 @@ fn opening_a_corrupt_file_shows_why_it_failed() {
     let dir = TempDir::new().unwrap();
     let path = dir.path().join("corrupt.mosaic");
     std::fs::write(&path, b"not a Mosaic").unwrap();
-    let mut harness = window(MosaicMakerApp::default());
-    let ctx = harness.ctx.clone();
+    let mut harness = window(
+        AnalysisCache::in_folder(dir.path().join("cache")),
+        nothing_chosen(),
+    );
+    let max_texture_side = max_texture_side(&harness.ctx);
 
-    harness.state_mut().open_from(&ctx, path);
+    session(&mut harness).open(path, max_texture_side).unwrap();
 
     run_until_status(&mut harness, "Couldn't open");
     harness.get_by_label_contains("isn't a Mosaic");
@@ -183,11 +182,11 @@ fn an_export_without_its_source_library_lists_the_tiles_drawn_from_thumbnails() 
     let fixture = Fixture::new();
     let mut harness = fixture.built_app();
     std::fs::remove_dir_all(fixture.source_library()).unwrap();
-    let ctx = harness.ctx.clone();
+    let tile_size = harness.state().export_tile_size;
 
-    harness
-        .state_mut()
-        .export_to(&ctx, fixture.path("stripes.png"));
+    session(&mut harness)
+        .export(fixture.path("stripes.png"), tile_size)
+        .unwrap();
     run_until_status(&mut harness, "Exported to");
 
     let tile_count = TILES_ACROSS * ROWS;
@@ -197,4 +196,17 @@ fn an_export_without_its_source_library_lists_the_tiles_drawn_from_thumbnails() 
     harness.run();
     harness.get_by_label("Column 0, row 0: red.png");
     save_screenshot(&mut harness, "export-tiles-from-thumbnails.png");
+}
+
+/// No Target Image or Source Library chosen yet, as when the app starts.
+fn nothing_chosen() -> Setup {
+    Setup {
+        target_image: None,
+        source_library: None,
+        settings: BuildSettings {
+            tiles_across: TILES_ACROSS,
+            repeat_radius: 0,
+            seed: 0,
+        },
+    }
 }

@@ -2,9 +2,6 @@
 //! may be running, with the outcome of the latest. Operations run through a [`Runner`], so the
 //! Session never touches threads or the GUI itself.
 
-// The window moves onto the Session in the next commit.
-#![allow(dead_code)]
-
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::mpsc::{Receiver, TryRecvError, channel};
@@ -136,10 +133,6 @@ impl Session {
             outcome: None,
             newly_shown: None,
         }
-    }
-
-    pub fn setup(&self) -> &Setup {
-        &self.setup
     }
 
     /// The setup inputs, to edit. A running build has its own copy, so edits only affect

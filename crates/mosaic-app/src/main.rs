@@ -1,20 +1,22 @@
-//! Mosaic Maker's window: gathers input, runs a build off the UI thread, and shows the Mosaic
-//! on a canvas to pan, zoom and inspect. Its File menu saves, opens and exports Mosaics.
+//! Mosaic Maker's window: gathers input, runs operations through a [`Session`], and shows the
+//! Mosaic on a canvas to pan, zoom and inspect. Its File menu saves, opens and exports Mosaics.
 
 use std::collections::{HashMap, HashSet};
 use std::hash::{BuildHasher, RandomState};
-use std::path::{Path, PathBuf};
+use std::panic::AssertUnwindSafe;
+use std::path::Path;
 use std::process::Command;
 use std::sync::Arc;
-use std::sync::mpsc::{Receiver, TryRecvError, channel};
 
 use eframe::egui;
 use image::RgbImage;
 use mosaic_core::{
-    AnalysisCache, BuildError, BuildReport, BuildSettings, BuildStats, Built, CancelToken,
-    DEFAULT_REPEAT_RADIUS, ExportReport, Mosaic, Progress, RENDERED_TILE_SIZE, ScreenPoint,
-    ScreenRect, SourceImage, SourceImageId, Stage, Tile, Viewport,
+    AnalysisCache, BuildReport, BuildSettings, BuildStats, DEFAULT_REPEAT_RADIUS, ExportReport,
+    Mosaic, Progress, RENDERED_TILE_SIZE, ScreenPoint, ScreenRect, SourceImage, SourceImageId,
+    Stage, Tile, Viewport,
 };
+
+use session::{Job, Operation, OriginalRead, Outcome, ReadingOriginal, Runner, Session, Setup};
 
 const DEFAULT_TILES_ACROSS: u32 = 60;
 
@@ -57,84 +59,57 @@ fn main() -> eframe::Result {
     eframe::run_native(
         "Mosaic Maker",
         eframe::NativeOptions::default(),
-        Box::new(|_| Ok(Box::new(MosaicMakerApp::default()))),
+        Box::new(|cc| {
+            let setup = Setup {
+                target_image: None,
+                source_library: None,
+                settings: BuildSettings {
+                    tiles_across: DEFAULT_TILES_ACROSS,
+                    repeat_radius: DEFAULT_REPEAT_RADIUS,
+                    seed: random_seed(),
+                },
+            };
+            Ok(Box::new(MosaicMakerApp::new(
+                &cc.egui_ctx,
+                AnalysisCache::in_user_cache_folder(),
+                setup,
+            )))
+        }),
     )
 }
 
 struct MosaicMakerApp {
-    target_image: Option<PathBuf>,
-    source_library: Option<PathBuf>,
-    tiles_across: u32,
-    repeat_radius: u32,
-    seed: u64,
-    cache: AnalysisCache,
-    running_build: Option<RunningBuild>,
+    session: Session,
+    /// The Session's shown Mosaic as the canvas draws it, once it has been uploaded.
     shown: Option<ShownMosaic>,
-    status: Option<String>,
-    /// What the last finished build worked around.
-    report: Option<BuildReport>,
-    /// Saving, opening or exporting, on another thread.
-    running_file_task: Option<Receiver<FileOutcome>>,
-    /// What the last Export of the shown Mosaic drew from Thumbnails.
-    export_report: Option<ExportReport>,
     /// The Tile Size for Export PNG.
     export_tile_size: u32,
     export_dialog_open: bool,
 }
 
-impl Default for MosaicMakerApp {
-    fn default() -> Self {
-        Self {
-            target_image: None,
-            source_library: None,
-            tiles_across: DEFAULT_TILES_ACROSS,
-            repeat_radius: DEFAULT_REPEAT_RADIUS,
-            seed: random_seed(),
-            cache: AnalysisCache::in_user_cache_folder(),
-            running_build: None,
-            shown: None,
-            status: None,
-            report: None,
-            running_file_task: None,
-            export_report: None,
-            export_tile_size: DEFAULT_EXPORT_TILE_SIZE,
-            export_dialog_open: false,
-        }
+/// Runs the Session's jobs on threads, repainting the window as they go and when they end.
+struct ThreadRunner {
+    ctx: egui::Context,
+}
+
+impl Runner for ThreadRunner {
+    fn spawn(&self, job: Job) {
+        let ctx = self.ctx.clone();
+        std::thread::spawn(move || {
+            let wake = || ctx.request_repaint();
+            // A job that panics ends here; the Session notices when the window repaints.
+            let _ = std::panic::catch_unwind(AssertUnwindSafe(|| job(&wake)));
+            ctx.request_repaint();
+        });
     }
-}
-
-struct RunningBuild {
-    cancel: CancelToken,
-    events: Receiver<BuildEvent>,
-    progress: Option<Progress>,
-}
-
-enum BuildEvent {
-    Progress(Progress),
-    /// The finished build, with its rendered Mosaic ready to upload as a texture.
-    Finished(Result<Box<(Built, egui::ColorImage)>, BuildError>),
-}
-
-/// How saving, opening or exporting ended.
-enum FileOutcome {
-    Saved(PathBuf),
-    /// The opened Mosaic, with its rendered image ready to upload as a texture.
-    Opened(PathBuf, Box<(Mosaic, egui::ColorImage)>),
-    Exported(PathBuf, ExportReport),
-    Failed(String),
-}
-
-/// How a build ended, as far as the window is concerned.
-enum Outcome {
-    Built(Box<(Built, egui::ColorImage)>),
-    Cancelled,
-    Failed(String),
 }
 
 /// The Mosaic on the canvas, and how it is being inspected.
 struct ShownMosaic {
     mosaic: Arc<Mosaic>,
     rendered: egui::TextureHandle,
+    /// What the build that made this Mosaic worked around. None for an opened Mosaic.
+    report: Option<BuildReport>,
     /// Fitted to the canvas the first time it is drawn.
     viewport: Option<Viewport>,
     thumbnails: ThumbnailTextures,
@@ -153,8 +128,8 @@ struct Pinned {
 
 /// The pinned Source Image's Original, as the inspector shows it.
 enum Original {
-    /// Being read on another thread; the Thumbnail stands in meanwhile.
-    Loading(Receiver<Option<egui::ColorImage>>),
+    /// Being read; the Thumbnail stands in meanwhile.
+    Loading(ReadingOriginal),
     Shown(egui::TextureHandle),
     /// The Thumbnail stands in.
     Unreachable,
@@ -172,8 +147,12 @@ struct ThumbnailTextures {
 
 impl eframe::App for MosaicMakerApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
-        self.receive_build_events(ui.ctx());
-        self.receive_file_outcome(ui.ctx());
+        if let Some(rendered) = self.session.poll() {
+            self.show(ui.ctx(), &rendered);
+        }
+        if let Some(shown) = &mut self.shown {
+            shown.receive_original(ui.ctx());
+        }
         egui::Panel::top("menu").show(ui, |ui| self.menu_bar(ui));
         if self.export_dialog_open {
             self.export_dialog(ui.ctx());
@@ -191,9 +170,40 @@ impl eframe::App for MosaicMakerApp {
 }
 
 impl MosaicMakerApp {
+    fn new(ctx: &egui::Context, cache: AnalysisCache, setup: Setup) -> Self {
+        let runner = ThreadRunner { ctx: ctx.clone() };
+        Self {
+            session: Session::new(Box::new(runner), cache, setup),
+            shown: None,
+            export_tile_size: DEFAULT_EXPORT_TILE_SIZE,
+            export_dialog_open: false,
+        }
+    }
+
     /// Whether nothing is being built, saved, opened or exported.
     fn idle(&self) -> bool {
-        self.running_build.is_none() && self.running_file_task.is_none()
+        self.session.running().is_none()
+    }
+
+    /// Puts the Session's newly shown Mosaic on the canvas, uploading its `rendered` picture.
+    fn show(&mut self, ctx: &egui::Context, rendered: &RgbImage) {
+        let mosaic = Arc::clone(self.session.shown().expect("a newly shown Mosaic is shown"));
+        let report = match self.session.outcome() {
+            Some(Outcome::Built(report)) => Some(report.clone()),
+            _ => None,
+        };
+        self.shown = Some(ShownMosaic {
+            mosaic,
+            rendered: ctx.load_texture(
+                "mosaic",
+                color_image(rendered),
+                egui::TextureOptions::LINEAR,
+            ),
+            report,
+            viewport: None,
+            thumbnails: ThumbnailTextures::default(),
+            pinned: None,
+        });
     }
 
     fn menu_bar(&mut self, ui: &mut egui::Ui) {
@@ -201,12 +211,14 @@ impl MosaicMakerApp {
         let saveable = idle && self.shown.is_some();
         egui::MenuBar::new().ui(ui, |ui| {
             ui.menu_button("File", |ui| {
+                // The Session would refuse what these buttons are disabled for, so its
+                // refusals aren't shown.
                 if ui.add_enabled(idle, egui::Button::new("Open…")).clicked()
                     && let Some(path) = rfd::FileDialog::new()
                         .add_filter("Mosaic", &["mosaic"])
                         .pick_file()
                 {
-                    self.open_from(ui.ctx(), path);
+                    let _ = self.session.open(path, max_texture_side(ui.ctx()));
                 }
                 if ui
                     .add_enabled(saveable, egui::Button::new("Save…"))
@@ -216,7 +228,7 @@ impl MosaicMakerApp {
                         .set_file_name(self.suggested_file_name("mosaic"))
                         .save_file()
                 {
-                    self.save_to(ui.ctx(), path);
+                    let _ = self.session.save(path);
                 }
                 ui.separator();
                 if ui
@@ -261,7 +273,8 @@ impl MosaicMakerApp {
                 .set_file_name(self.suggested_file_name("png"))
                 .save_file()
         {
-            self.export_to(ctx, path);
+            // Export PNG is only offered while the Session would accept it.
+            let _ = self.session.export(path, self.export_tile_size);
         }
     }
 
@@ -276,118 +289,11 @@ impl MosaicMakerApp {
         format!("{stem}.{extension}")
     }
 
-    /// Saves the shown Mosaic to the Mosaic File at `path`, on another thread.
-    fn save_to(&mut self, ctx: &egui::Context, path: PathBuf) {
-        let Some(shown) = &self.shown else {
-            return;
-        };
-        let mosaic = Arc::clone(&shown.mosaic);
-        self.start_file_task(ctx, move || match mosaic.save(&path) {
-            Ok(()) => FileOutcome::Saved(path),
-            Err(error) => {
-                FileOutcome::Failed(format!("Couldn't save {}: {error}.", path.display()))
-            }
-        });
-    }
-
-    /// Opens the Mosaic File at `path` on another thread, to show in place of any Mosaic
-    /// shown now.
-    fn open_from(&mut self, ctx: &egui::Context, path: PathBuf) {
-        let max_texture_side = ctx.input(|input| input.max_texture_side) as u32;
-        self.start_file_task(ctx, move || match Mosaic::open(&path) {
-            Ok(mosaic) => {
-                let image = displayable_image(&mosaic, max_texture_side);
-                FileOutcome::Opened(path, Box::new((mosaic, image)))
-            }
-            Err(error) => {
-                FileOutcome::Failed(format!("Couldn't open {}: {error}.", path.display()))
-            }
-        });
-    }
-
-    /// Exports the shown Mosaic to a PNG at `path`, on another thread.
-    fn export_to(&mut self, ctx: &egui::Context, path: PathBuf) {
-        let Some(shown) = &self.shown else {
-            return;
-        };
-        let mosaic = Arc::clone(&shown.mosaic);
-        let tile_size = self.export_tile_size;
-        self.start_file_task(ctx, move || match mosaic.export_png(&path, tile_size) {
-            Ok(report) => FileOutcome::Exported(path, report),
-            Err(error) => {
-                FileOutcome::Failed(format!("Couldn't export {}: {error}.", path.display()))
-            }
-        });
-    }
-
-    fn start_file_task(
-        &mut self,
-        ctx: &egui::Context,
-        task: impl FnOnce() -> FileOutcome + Send + 'static,
-    ) {
-        let (sender, outcome) = channel();
-        let ctx = ctx.clone();
-        std::thread::spawn(move || {
-            // The receiver only goes away when the app closes.
-            let _ = sender.send(task());
-            ctx.request_repaint();
-        });
-        self.running_file_task = Some(outcome);
-        self.status = None;
-        self.export_report = None;
-    }
-
-    fn receive_file_outcome(&mut self, ctx: &egui::Context) {
-        let Some(running) = &self.running_file_task else {
-            return;
-        };
-        let outcome = match running.try_recv() {
-            Ok(outcome) => outcome,
-            Err(TryRecvError::Empty) => return,
-            // The thread panicked before sending its outcome.
-            Err(TryRecvError::Disconnected) => {
-                FileOutcome::Failed("Something went wrong with the file.".to_owned())
-            }
-        };
-        self.running_file_task = None;
-        self.status = Some(match outcome {
-            FileOutcome::Saved(path) => format!("Saved to {}.", path.display()),
-            FileOutcome::Opened(path, opened) => {
-                let (mosaic, image) = *opened;
-                let settings = mosaic.settings();
-                self.target_image = Some(mosaic.target_image().to_owned());
-                self.source_library = Some(mosaic.source_library().to_owned());
-                self.tiles_across = settings.tiles_across;
-                self.repeat_radius = settings.repeat_radius;
-                self.seed = settings.seed;
-                self.show(ctx, mosaic, image);
-                self.report = None;
-                format!("Opened {}.", path.display())
-            }
-            FileOutcome::Exported(path, report) => {
-                self.export_report = Some(report);
-                format!("Exported to {}.", path.display())
-            }
-            FileOutcome::Failed(error) => error,
-        });
-    }
-
-    /// Puts `mosaic` on the canvas, its rendered image uploaded from `image`.
-    fn show(&mut self, ctx: &egui::Context, mosaic: Mosaic, image: egui::ColorImage) {
-        self.export_report = None;
-        self.shown = Some(ShownMosaic {
-            mosaic: Arc::new(mosaic),
-            rendered: ctx.load_texture("mosaic", image, egui::TextureOptions::LINEAR),
-            viewport: None,
-            thumbnails: ThumbnailTextures::default(),
-            pinned: None,
-        });
-    }
-
     fn setup_panel(&mut self, ui: &mut egui::Ui) {
         ui.heading("Mosaic Maker");
         ui.add_space(8.0);
         let idle = self.idle();
+        let setup = self.session.setup_mut();
 
         ui.label("Target Image");
         if ui
@@ -397,9 +303,9 @@ impl MosaicMakerApp {
                 .add_filter("Images", &["jpg", "jpeg", "png", "webp"])
                 .pick_file()
         {
-            self.target_image = Some(path);
+            setup.target_image = Some(path);
         }
-        ui.label(display_path(self.target_image.as_deref()));
+        ui.label(display_path(setup.target_image.as_deref()));
         ui.add_space(8.0);
 
         ui.label("Source Library");
@@ -408,15 +314,16 @@ impl MosaicMakerApp {
             .clicked()
             && let Some(path) = rfd::FileDialog::new().pick_folder()
         {
-            self.source_library = Some(path);
+            setup.source_library = Some(path);
         }
-        ui.label(display_path(self.source_library.as_deref()));
+        ui.label(display_path(setup.source_library.as_deref()));
         ui.add_space(8.0);
 
+        let settings = &mut setup.settings;
         let label = ui.label("Tiles Across");
         ui.add_enabled(
             idle,
-            egui::DragValue::new(&mut self.tiles_across).range(1..=300),
+            egui::DragValue::new(&mut settings.tiles_across).range(1..=300),
         )
         .labelled_by(label.id);
         ui.add_space(8.0);
@@ -424,51 +331,53 @@ impl MosaicMakerApp {
         let label = ui.label("Repeat Radius");
         ui.add_enabled(
             idle,
-            egui::DragValue::new(&mut self.repeat_radius).range(0..=20),
+            egui::DragValue::new(&mut settings.repeat_radius).range(0..=20),
         )
         .labelled_by(label.id);
         ui.add_space(8.0);
 
         let label = ui.label("Seed");
         ui.horizontal(|ui| {
-            ui.add_enabled(idle, egui::DragValue::new(&mut self.seed))
+            ui.add_enabled(idle, egui::DragValue::new(&mut settings.seed))
                 .labelled_by(label.id);
             if ui
                 .add_enabled(idle, egui::Button::new("Randomise"))
                 .clicked()
             {
-                self.seed = random_seed();
+                settings.seed = random_seed();
             }
         });
         ui.add_space(8.0);
 
+        let ready = setup.target_image.is_some() && setup.source_library.is_some();
+        let building = self.session.running() == Some(&Operation::Build);
         ui.horizontal(|ui| {
-            let ready = self.target_image.is_some() && self.source_library.is_some();
             if ui
                 .add_enabled(idle && ready, egui::Button::new("Generate"))
                 .clicked()
             {
-                self.start_build(ui.ctx());
+                // Generate is only enabled while the Session would accept it.
+                let _ = self.session.build(max_texture_side(ui.ctx()));
             }
-            if let Some(running_build) = &self.running_build
-                && ui.button("Cancel").clicked()
-            {
-                running_build.cancel.cancel();
+            if building && ui.button("Cancel").clicked() {
+                self.session.cancel();
             }
         });
 
-        if let Some(running_build) = &self.running_build {
+        if building {
             ui.add_space(8.0);
-            ui.add(progress_bar(running_build.progress));
+            ui.add(progress_bar(self.session.progress()));
         }
-        if let Some(status) = &self.status {
+        if let Some(status) = self.session.outcome().and_then(status) {
             ui.add_space(8.0);
             ui.label(status);
         }
-        if let (Some(report), Some(shown)) = (&self.export_report, &self.shown) {
+        if let (Some(Outcome::Exported(_, report)), Some(shown)) =
+            (self.session.outcome(), &self.shown)
+        {
             show_export_report(ui, report, &shown.mosaic);
         }
-        if let Some(report) = &self.report {
+        if let Some(report) = self.shown.as_ref().and_then(|shown| shown.report.as_ref()) {
             ui.add_space(8.0);
             show_build_report(ui, report);
         }
@@ -476,7 +385,7 @@ impl MosaicMakerApp {
 
     fn mosaic_panel(&mut self, ui: &mut egui::Ui) {
         match &mut self.shown {
-            Some(shown) => shown.canvas(ui),
+            Some(shown) => shown.canvas(ui, &self.session),
             None => {
                 ui.centered_and_justified(|ui| {
                     ui.label("Choose a Target Image and a Source Library, then Generate.");
@@ -484,98 +393,34 @@ impl MosaicMakerApp {
             }
         }
     }
+}
 
-    fn start_build(&mut self, ctx: &egui::Context) {
-        let (Some(target_image), Some(source_library)) =
-            (self.target_image.clone(), self.source_library.clone())
-        else {
-            return;
-        };
-        let settings = BuildSettings {
-            tiles_across: self.tiles_across,
-            repeat_radius: self.repeat_radius,
-            seed: self.seed,
-        };
-        let cache = self.cache.clone();
-        let cancel = CancelToken::new();
-        let (sender, events) = channel();
-        let max_texture_side = ctx.input(|input| input.max_texture_side) as u32;
-        let ctx = ctx.clone();
-        let build_cancel = cancel.clone();
-        std::thread::spawn(move || {
-            let result = mosaic_core::build(
-                &target_image,
-                &source_library,
-                &settings,
-                &cache,
-                |progress| {
-                    // The receiver only goes away when the app closes.
-                    let _ = sender.send(BuildEvent::Progress(progress));
-                    ctx.request_repaint();
-                },
-                &build_cancel,
-            );
-            let finished = result.map(|built| {
-                let image = displayable_image(&built.mosaic, max_texture_side);
-                Box::new((built, image))
-            });
-            let _ = sender.send(BuildEvent::Finished(finished));
-            ctx.request_repaint();
-        });
-        self.running_build = Some(RunningBuild {
-            cancel,
-            events,
-            progress: None,
-        });
-        self.status = None;
-        self.report = None;
-    }
+/// The largest texture the GPU takes, as a side in pixels.
+fn max_texture_side(ctx: &egui::Context) -> u32 {
+    ctx.input(|input| input.max_texture_side) as u32
+}
 
-    fn receive_build_events(&mut self, ctx: &egui::Context) {
-        let Some(running_build) = &mut self.running_build else {
-            return;
-        };
-        let finished = loop {
-            match running_build.events.try_recv() {
-                Ok(BuildEvent::Progress(progress)) => running_build.progress = Some(progress),
-                Ok(BuildEvent::Finished(Ok(built))) => {
-                    break Some(Outcome::Built(built));
-                }
-                Ok(BuildEvent::Finished(Err(BuildError::Cancelled))) => {
-                    break Some(Outcome::Cancelled);
-                }
-                Ok(BuildEvent::Finished(Err(error))) => {
-                    break Some(Outcome::Failed(error.to_string()));
-                }
-                Err(TryRecvError::Empty) => break None,
-                // The build thread panicked before sending its result.
-                Err(TryRecvError::Disconnected) => {
-                    break Some(Outcome::Failed("the build stopped unexpectedly".to_owned()));
-                }
-            }
-        };
-        let Some(outcome) = finished else {
-            return;
-        };
-        self.running_build = None;
-        match outcome {
-            Outcome::Built(built) => {
-                let (built, image) = *built;
-                self.show(ctx, built.mosaic, image);
-                self.status = None;
-                self.report = Some(built.report);
-            }
-            Outcome::Cancelled => self.status = Some("Build cancelled.".to_owned()),
-            Outcome::Failed(error) => {
-                self.status = Some(format!("Build failed: {error}."));
-            }
-        }
-    }
+/// What the status line says about how the latest operation ended, if anything. A build
+/// says it through its report instead.
+fn status(outcome: &Outcome) -> Option<String> {
+    Some(match outcome {
+        Outcome::Built(_) => return None,
+        Outcome::Saved(path) => format!("Saved to {}.", path.display()),
+        Outcome::Opened(path) => format!("Opened {}.", path.display()),
+        Outcome::Exported(path, _) => format!("Exported to {}.", path.display()),
+        Outcome::Cancelled => "Build cancelled.".to_owned(),
+        Outcome::Failed(operation, reason) => match operation {
+            Operation::Build => format!("Build failed: {reason}."),
+            Operation::Open(path) => format!("Couldn't open {}: {reason}.", path.display()),
+            Operation::Save(path) => format!("Couldn't save {}: {reason}.", path.display()),
+            Operation::Export(path) => format!("Couldn't export {}: {reason}.", path.display()),
+        },
+    })
 }
 
 impl ShownMosaic {
     /// Draws the Mosaic, and pans, zooms, hovers and pins as the pointer asks.
-    fn canvas(&mut self, ui: &mut egui::Ui) {
+    fn canvas(&mut self, ui: &mut egui::Ui, session: &Session) {
         let (response, painter) =
             ui.allocate_painter(ui.available_size(), egui::Sense::click_and_drag());
         let screen = screen_rect(response.rect);
@@ -600,7 +445,7 @@ impl ShownMosaic {
 
         if response.clicked() {
             match tile_under(response.interact_pointer_pos()) {
-                Some(tile) => self.pin(ui.ctx(), tile),
+                Some(tile) => self.pin(session, tile),
                 None => self.pinned = None,
             }
         }
@@ -664,31 +509,40 @@ impl ShownMosaic {
     }
 
     /// Pins the inspector to the Source Image filling `tile`, and starts reading its Original.
-    fn pin(&mut self, ctx: &egui::Context, tile: Tile) {
+    fn pin(&mut self, session: &Session, tile: Tile) {
         let id = source_image_at(&self.mosaic, tile).id();
         if let Some(pinned) = &self.pinned
             && source_image_at(&self.mosaic, pinned.tile).id() == id
         {
             return;
         }
-        let (sender, original) = channel();
-        let mosaic = Arc::clone(&self.mosaic);
-        let ctx = ctx.clone();
-        std::thread::spawn(move || {
-            let source_image = source_image_at(&mosaic, tile);
-            let original = mosaic
-                .original(source_image, ORIGINAL_SIZE)
-                .map(|image| color_image(&image));
-            // The receiver goes away if the inspector was unpinned meanwhile.
-            let _ = sender.send(original);
-            ctx.request_repaint();
-        });
         self.pinned = Some(Pinned {
             tile,
             tiles: self.mosaic.tiles_filled_by(id),
-            original: Original::Loading(original),
+            original: Original::Loading(session.read_original(tile, ORIGINAL_SIZE)),
             reveal_error: None,
         });
+    }
+
+    /// Shows the pinned Source Image's Original once it has been read.
+    fn receive_original(&mut self, ctx: &egui::Context) {
+        let Some(pinned) = &mut self.pinned else {
+            return;
+        };
+        let Original::Loading(reading) = &pinned.original else {
+            return;
+        };
+        match reading.poll() {
+            Some(OriginalRead::Reachable(image)) => {
+                pinned.original = Original::Shown(ctx.load_texture(
+                    "original",
+                    color_image(&image),
+                    egui::TextureOptions::LINEAR,
+                ));
+            }
+            Some(OriginalRead::Unreachable) => pinned.original = Original::Unreachable,
+            None => {}
+        }
     }
 
     /// The pinned Source Image: its Original, where that lives, and how much it is used.
@@ -696,21 +550,6 @@ impl ShownMosaic {
         let Some(pinned) = &mut self.pinned else {
             return;
         };
-        if let Original::Loading(receiver) = &pinned.original {
-            match receiver.try_recv() {
-                Ok(Some(image)) => {
-                    pinned.original = Original::Shown(ui.ctx().load_texture(
-                        "original",
-                        image,
-                        egui::TextureOptions::LINEAR,
-                    ));
-                }
-                Ok(None) | Err(TryRecvError::Disconnected) => {
-                    pinned.original = Original::Unreachable
-                }
-                Err(TryRecvError::Empty) => {}
-            }
-        }
         let source_image = source_image_at(&self.mosaic, pinned.tile);
 
         ui.heading("Source Image");
@@ -971,9 +810,4 @@ fn progress_bar(progress: Option<Progress>) -> egui::ProgressBar {
     let fraction = progress.done as f32 / progress.total.max(1) as f32;
     egui::ProgressBar::new(fraction)
         .text(format!("{stage}: {} / {}", progress.done, progress.total))
-}
-
-/// The rendered Mosaic, scaled down if it exceeds the GPU's texture size limit.
-fn displayable_image(mosaic: &Mosaic, max_texture_side: u32) -> egui::ColorImage {
-    color_image(&mosaic.rendered_within(max_texture_side))
 }
