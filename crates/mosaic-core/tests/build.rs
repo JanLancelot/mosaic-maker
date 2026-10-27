@@ -316,7 +316,7 @@ fn an_edited_file_gets_a_new_identity() {
 }
 
 /// Every file under `folder` with its contents, so any write inside it shows up.
-fn snapshot(folder: &Path) -> Vec<(std::path::PathBuf, Vec<u8>)> {
+fn folder_contents(folder: &Path) -> Vec<(std::path::PathBuf, Vec<u8>)> {
     let mut files = Vec::new();
     let mut folders = vec![folder.to_owned()];
     while let Some(folder) = folders.pop() {
@@ -356,12 +356,12 @@ fn a_build_writes_nothing_inside_the_source_library() {
     fixture.add_source_image("nested/blue.png", &solid(8, 8, BLUE));
     fixture.add_file("notes.txt", b"not a picture");
     let target_image = fixture.set_target_image(&solid(10, 10, RED));
-    let before = snapshot(&fixture.source_library());
+    let before = folder_contents(&fixture.source_library());
 
     fixture.build(&target_image, 1);
     fixture.build(&target_image, 1);
 
-    assert_eq!(snapshot(&fixture.source_library()), before);
+    assert_eq!(folder_contents(&fixture.source_library()), before);
 }
 
 #[test]
@@ -369,7 +369,7 @@ fn a_cache_folder_inside_the_source_library_is_never_written() {
     let fixture = Fixture::new();
     fixture.add_source_image("red.png", &solid(8, 8, RED));
     let target_image = fixture.set_target_image(&solid(10, 10, RED));
-    let before = snapshot(&fixture.source_library());
+    let before = folder_contents(&fixture.source_library());
     let settings = BuildSettings {
         tiles_across: 1,
         repeat_radius: DEFAULT_REPEAT_RADIUS,
@@ -389,7 +389,7 @@ fn a_cache_folder_inside_the_source_library_is_never_written() {
         .unwrap();
     }
 
-    assert_eq!(snapshot(&fixture.source_library()), before);
+    assert_eq!(folder_contents(&fixture.source_library()), before);
 }
 
 #[test]
@@ -401,7 +401,7 @@ fn a_corrupt_cache_entry_is_recomputed_rather_than_failing_the_build() {
     let target_image = fixture.set_target_image(&target);
     let first = fixture.build_reporting(&target_image, 2);
 
-    let cached = snapshot(&fixture.cache_folder());
+    let cached = folder_contents(&fixture.cache_folder());
     assert!(!cached.is_empty(), "the first build cached nothing");
     for (path, contents) in cached {
         std::fs::write(&path, &contents[..contents.len() / 2]).unwrap();

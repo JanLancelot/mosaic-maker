@@ -202,7 +202,7 @@ impl Mosaic {
             .collect()
     }
 
-    /// The Mosaic drawn at `RENDERED_TILE_SIZE` pixels per Tile.
+    /// The Mosaic drawn with each Tile `RENDERED_TILE_SIZE` pixels square.
     pub fn rendered(&self) -> &RgbImage {
         &self.rendered
     }

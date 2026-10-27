@@ -30,17 +30,17 @@ enum Picture {
 /// Why a Mosaic couldn't be exported.
 #[derive(Debug, thiserror::Error)]
 pub enum ExportError {
-    #[error("the size per Tile must be at least 1 px")]
+    #[error("the Tile Size must be at least 1 px")]
     NoTileSize,
-    #[error("at {tile_size} px per Tile the PNG would be over a gigapixel")]
+    #[error("at a Tile Size of {tile_size} px the PNG would be over a gigapixel")]
     TooLarge { tile_size: u32 },
     #[error("the PNG couldn't be written ({0})")]
     Write(#[from] io::Error),
 }
 
 impl Mosaic {
-    /// Writes the Mosaic to a PNG at `path` with `tile_size` pixels per Tile, replacing any
-    /// file there. Each Tile is drawn from its Source Image's Original where that is
+    /// Writes an Export of the Mosaic to a PNG at `path`, at Tile Size `tile_size`, replacing
+    /// any file there. Each Tile is drawn from its Source Image's Original where that is
     /// reachable, and from its Thumbnail where it isn't.
     pub fn export_png(&self, path: &Path, tile_size: u32) -> Result<ExportReport, ExportError> {
         if tile_size == 0 {

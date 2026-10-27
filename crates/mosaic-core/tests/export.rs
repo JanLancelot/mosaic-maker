@@ -4,7 +4,7 @@ use common::{BLUE, Fixture, GREEN, RED, STRIPES, solid, striped_mosaic, tile};
 use image::{Rgb, RgbImage};
 use mosaic_core::{Mosaic, Tile};
 
-/// Asserts that every pixel of `tile` in `exported`, at `tile_size` pixels per Tile, is `color`.
+/// Asserts that every pixel of `tile` in `exported`, at Tile Size `tile_size`, is `color`.
 fn assert_tile_is(exported: &RgbImage, tile: Tile, tile_size: u32, color: Rgb<u8>) {
     for y in tile.row * tile_size..(tile.row + 1) * tile_size {
         for x in tile.column * tile_size..(tile.column + 1) * tile_size {

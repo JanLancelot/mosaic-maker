@@ -1,7 +1,7 @@
-//! Saving a Mosaic to a self-contained `.mosaic` file and opening it again, without needing
+//! Saving a Mosaic to its Mosaic File and opening it again, without needing
 //! its Source Library.
 //!
-//! A `.mosaic` file is a zip holding `manifest.json` (see [`Manifest`]), the rendered Mosaic as
+//! A Mosaic File (`.mosaic`) is a zip holding `manifest.json` (see [`Manifest`]), the rendered Mosaic as
 //! `mosaic.png`, and the Thumbnail of every Source Image used as `thumbnails/<identity>.png`.
 
 use std::fs::File;
@@ -77,7 +77,7 @@ struct SourceImageEntry {
 #[error(transparent)]
 pub struct SaveError(#[from] io::Error);
 
-/// Why a `.mosaic` file couldn't be opened.
+/// Why a Mosaic File couldn't be opened.
 #[derive(Debug, thiserror::Error)]
 pub enum OpenError {
     #[error("the file couldn't be read ({0})")]
@@ -93,7 +93,7 @@ fn corrupt(error: impl ToString) -> OpenError {
 }
 
 impl Mosaic {
-    /// Writes the Mosaic to the `.mosaic` file at `path`, replacing any file there. The file
+    /// Writes the Mosaic to the Mosaic File at `path`, replacing any file there. The file
     /// holds everything needed to open and inspect the Mosaic again, even once its Source
     /// Library is gone. An existing file is left as it was if saving fails.
     pub fn save(&self, path: &Path) -> Result<(), SaveError> {
@@ -152,7 +152,7 @@ impl Mosaic {
         }
     }
 
-    /// Opens the `.mosaic` file at `path`. Its Source Library isn't needed: whether each
+    /// Opens the Mosaic File at `path`. Its Source Library isn't needed: whether each
     /// Original is still reachable is up to [`Mosaic::original`].
     pub fn open(path: &Path) -> Result<Mosaic, OpenError> {
         let file = File::open(path).map_err(OpenError::Unreadable)?;

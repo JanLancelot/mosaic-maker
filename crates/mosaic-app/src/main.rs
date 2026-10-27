@@ -19,14 +19,14 @@ use mosaic_core::{
 
 const DEFAULT_TILES_ACROSS: u32 = 60;
 
-/// The pixels per Tile Export PNG starts with.
+/// The Tile Size Export PNG starts with.
 const DEFAULT_EXPORT_TILE_SIZE: u32 = 64;
 
 /// How much one point of scrolling zooms the canvas.
 const SCROLL_ZOOM_SPEED: f32 = 0.005;
 
 /// Tiles drawn larger than this, in physical pixels, are drawn from their Thumbnails, since the
-/// rendered Mosaic (`RENDERED_TILE_SIZE` pixels per Tile) would look soft. Any smaller, and so
+/// rendered Mosaic (`RENDERED_TILE_SIZE` pixels square per Tile) would look soft. Any smaller, and so
 /// many Tiles are on screen that drawing each one would make panning stutter.
 const DETAILED_TILE_PIXELS: f32 = 1.5 * RENDERED_TILE_SIZE as f32;
 
@@ -70,7 +70,7 @@ struct MosaicMakerApp {
     report: Option<BuildReport>,
     /// Saving, opening or exporting, on another thread.
     running_file_task: Option<Receiver<FileOutcome>>,
-    /// Pixels per Tile for Export PNG.
+    /// The Tile Size for Export PNG.
     export_tile_size: u32,
     export_dialog_open: bool,
 }
@@ -221,7 +221,7 @@ impl MosaicMakerApp {
         });
     }
 
-    /// Asks how many pixels per Tile to export at, then where to.
+    /// Asks for the Tile Size to export at, then where to.
     fn export_dialog(&mut self, ctx: &egui::Context) {
         let mut export = false;
         let mut cancel = false;
@@ -229,7 +229,7 @@ impl MosaicMakerApp {
             ui.heading("Export PNG");
             ui.add_space(8.0);
             ui.horizontal(|ui| {
-                let label = ui.label("Pixels per Tile");
+                let label = ui.label("Tile Size");
                 ui.add(
                     egui::DragValue::new(&mut self.export_tile_size)
                         .range(1..=512)
@@ -268,7 +268,7 @@ impl MosaicMakerApp {
         format!("{stem}.{extension}")
     }
 
-    /// Saves the shown Mosaic to the `.mosaic` file at `path`, on another thread.
+    /// Saves the shown Mosaic to the Mosaic File at `path`, on another thread.
     fn save_to(&mut self, ctx: &egui::Context, path: PathBuf) {
         let Some(shown) = &self.shown else {
             return;
@@ -282,7 +282,7 @@ impl MosaicMakerApp {
         });
     }
 
-    /// Opens the `.mosaic` file at `path` on another thread, to show in place of any Mosaic
+    /// Opens the Mosaic File at `path` on another thread, to show in place of any Mosaic
     /// shown now.
     fn open_from(&mut self, ctx: &egui::Context, path: PathBuf) {
         let max_texture_side = ctx.input(|input| input.max_texture_side) as u32;
