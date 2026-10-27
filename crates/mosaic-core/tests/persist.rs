@@ -1,6 +1,10 @@
 mod common;
 
-use common::{Fixture, striped_mosaic_with, tile, tiles};
+use std::fs::File;
+use std::io::{Cursor, Read, Write};
+use std::path::Path;
+
+use common::{Fixture, striped_mosaic, striped_mosaic_with, tile, tiles};
 use mosaic_core::{BuildSettings, Mosaic, OpenError};
 
 const SETTINGS: BuildSettings = BuildSettings {
@@ -110,4 +114,39 @@ fn saving_over_an_existing_file_replaces_it() {
         .unwrap();
 
     assert_eq!(*Mosaic::open(&path).unwrap().settings(), SETTINGS);
+}
+
+/// Rewrites `format_version` in the manifest of the Mosaic File at `path`, copying every other
+/// entry as it is.
+fn set_format_version(path: &Path, format_version: u32) {
+    let mut zip = zip::ZipArchive::new(File::open(path).unwrap()).unwrap();
+    let mut rewritten = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    for index in 0..zip.len() {
+        let mut entry = zip.by_index(index).unwrap();
+        let name = entry.name().unwrap().into_owned();
+        let mut contents = Vec::new();
+        entry.read_to_end(&mut contents).unwrap();
+        if name == "manifest.json" {
+            let mut manifest: serde_json::Value = serde_json::from_slice(&contents).unwrap();
+            manifest["format_version"] = format_version.into();
+            contents = serde_json::to_vec(&manifest).unwrap();
+        }
+        rewritten
+            .start_file(name, zip::write::SimpleFileOptions::default())
+            .unwrap();
+        rewritten.write_all(&contents).unwrap();
+    }
+    std::fs::write(path, rewritten.finish().unwrap().into_inner()).unwrap();
+}
+
+#[test]
+fn opening_a_mosaic_file_of_another_format_version_is_an_error() {
+    let fixture = Fixture::new();
+    let path = fixture.path("striped.mosaic");
+    striped_mosaic(&fixture).save(&path).unwrap();
+    set_format_version(&path, 2);
+
+    let opened = Mosaic::open(&path);
+
+    assert!(matches!(opened, Err(OpenError::UnsupportedVersion(2))));
 }
