@@ -18,7 +18,15 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo fmt --check
       - run: cargo clippy --all-targets -- -D warnings
+      # Includes mosaic-app's smoke tests, which render the window headlessly.
       - run: cargo test
+      - name: Upload screenshots for the PR
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: screenshots
+          path: target/screenshots/
+          if-no-files-found: ignore
       # Builds must not depend on how parallel analysis interleaves, so the tests must
       # also pass with it on one thread.
       - run: RAYON_NUM_THREADS=1 cargo test -p mosaic-core
