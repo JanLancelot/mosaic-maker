@@ -70,6 +70,8 @@ struct MosaicMakerApp {
     report: Option<BuildReport>,
     /// Saving, opening or exporting, on another thread.
     running_file_task: Option<Receiver<FileOutcome>>,
+    /// What the last Export of the shown Mosaic drew from Thumbnails.
+    export_report: Option<ExportReport>,
     /// The Tile Size for Export PNG.
     export_tile_size: u32,
     export_dialog_open: bool,
@@ -89,6 +91,7 @@ impl Default for MosaicMakerApp {
             status: None,
             report: None,
             running_file_task: None,
+            export_report: None,
             export_tile_size: DEFAULT_EXPORT_TILE_SIZE,
             export_dialog_open: false,
         }
@@ -326,6 +329,7 @@ impl MosaicMakerApp {
         });
         self.running_file_task = Some(outcome);
         self.status = None;
+        self.export_report = None;
     }
 
     fn receive_file_outcome(&mut self, ctx: &egui::Context) {
@@ -356,18 +360,8 @@ impl MosaicMakerApp {
                 format!("Opened {}.", path.display())
             }
             FileOutcome::Exported(path, report) => {
-                let exported = format!("Exported to {}.", path.display());
-                match report.tiles_from_thumbnails.len() {
-                    0 => exported,
-                    1 => format!(
-                        "{exported} 1 Tile was drawn from its Thumbnail, since its Original \
-                         is unreachable."
-                    ),
-                    count => format!(
-                        "{exported} {count} Tiles were drawn from Thumbnails, since their \
-                         Originals are unreachable."
-                    ),
-                }
+                self.export_report = Some(report);
+                format!("Exported to {}.", path.display())
             }
             FileOutcome::Failed(error) => error,
         });
@@ -375,6 +369,7 @@ impl MosaicMakerApp {
 
     /// Puts `mosaic` on the canvas, its rendered image uploaded from `image`.
     fn show(&mut self, ctx: &egui::Context, mosaic: Mosaic, image: egui::ColorImage) {
+        self.export_report = None;
         self.shown = Some(ShownMosaic {
             mosaic: Arc::new(mosaic),
             rendered: ctx.load_texture("mosaic", image, egui::TextureOptions::LINEAR),
@@ -464,6 +459,9 @@ impl MosaicMakerApp {
         if let Some(status) = &self.status {
             ui.add_space(8.0);
             ui.label(status);
+        }
+        if let (Some(report), Some(shown)) = (&self.export_report, &self.shown) {
+            show_export_report(ui, report, &shown.mosaic);
         }
         if let Some(report) = &self.report {
             ui.add_space(8.0);
@@ -923,6 +921,37 @@ fn show_build_report(ui: &mut egui::Ui, report: &BuildReport) {
              for {relaxed} Tiles."
         ));
     }
+}
+
+/// Which Tiles the last Export drew from Thumbnails, if any.
+fn show_export_report(ui: &mut egui::Ui, report: &ExportReport, mosaic: &Mosaic) {
+    let tiles = &report.tiles_from_thumbnails;
+    let heading = match tiles.len() {
+        0 => return,
+        1 => "1 Tile drawn from its Thumbnail".to_owned(),
+        count => format!("{count} Tiles drawn from Thumbnails"),
+    };
+    ui.add_space(8.0);
+    ui.collapsing(heading, |ui| {
+        ui.weak("Their Originals are unreachable, so the Export used Thumbnails instead.");
+        let row_height = ui.text_style_height(&egui::TextStyle::Body);
+        // Only the rows in view are laid out, since a large Mosaic has thousands of Tiles.
+        egui::ScrollArea::vertical().max_height(200.0).show_rows(
+            ui,
+            row_height,
+            tiles.len(),
+            |ui, rows| {
+                for &tile in &tiles[rows] {
+                    ui.label(format!(
+                        "Column {}, row {}: {}",
+                        tile.column,
+                        tile.row,
+                        source_image_at(mosaic, tile).file_name()
+                    ));
+                }
+            },
+        );
+    });
 }
 
 fn progress_bar(progress: Option<Progress>) -> egui::ProgressBar {

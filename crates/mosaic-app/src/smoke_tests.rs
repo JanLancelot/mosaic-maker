@@ -219,3 +219,24 @@ fn opening_a_corrupt_file_shows_why_it_failed() {
     run_until_status(&mut harness, "Couldn't open");
     harness.get_by_label_contains("isn't a Mosaic");
 }
+
+#[test]
+fn an_export_without_its_source_library_lists_the_tiles_drawn_from_thumbnails() {
+    let fixture = Fixture::new();
+    let mut harness = fixture.built_app();
+    std::fs::remove_dir_all(fixture.source_library()).unwrap();
+    let ctx = harness.ctx.clone();
+
+    harness
+        .state_mut()
+        .export_to(&ctx, fixture.path("stripes.png"));
+    run_until_status(&mut harness, "Exported to");
+
+    let tile_count = TILES_ACROSS * ROWS;
+    harness
+        .get_by_label(&format!("{tile_count} Tiles drawn from Thumbnails"))
+        .click_accesskit();
+    harness.run();
+    harness.get_by_label("Column 0, row 0: red.png");
+    save_screenshot(&mut harness, "export-tiles-from-thumbnails.png");
+}
