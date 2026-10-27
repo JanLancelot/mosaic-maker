@@ -263,6 +263,6 @@ fn a_rendered_mosaic_within_a_limit_is_left_at_its_own_size() {
     let fixture = Fixture::new();
     let mosaic = striped_mosaic(&fixture);
 
-    assert_eq!(*mosaic.rendered_within(96), *mosaic.rendered());
-    assert_eq!(*mosaic.rendered_within(4096), *mosaic.rendered());
+    assert_eq!(mosaic.rendered_within(96), *mosaic.rendered());
+    assert_eq!(mosaic.rendered_within(4096), *mosaic.rendered());
 }

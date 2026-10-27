@@ -16,7 +16,9 @@ use mosaic_core::{
     Stage, Tile, Viewport,
 };
 
-use session::{Job, Operation, OriginalRead, Outcome, ReadingOriginal, Runner, Session, Setup};
+use session::{
+    Job, NewlyShown, Operation, OriginalRead, Outcome, ReadingOriginal, Runner, Session, Setup,
+};
 
 const DEFAULT_TILES_ACROSS: u32 = 60;
 
@@ -108,8 +110,6 @@ impl Runner for ThreadRunner {
 struct ShownMosaic {
     mosaic: Arc<Mosaic>,
     rendered: egui::TextureHandle,
-    /// What the build that made this Mosaic worked around. None for an opened Mosaic.
-    report: Option<BuildReport>,
     /// Fitted to the canvas the first time it is drawn.
     viewport: Option<Viewport>,
     thumbnails: ThumbnailTextures,
@@ -147,8 +147,8 @@ struct ThumbnailTextures {
 
 impl eframe::App for MosaicMakerApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
-        if let Some(rendered) = self.session.poll() {
-            self.show(ui.ctx(), &rendered);
+        if let Some(newly_shown) = self.session.poll() {
+            self.show(ui.ctx(), newly_shown);
         }
         if let Some(shown) = &mut self.shown {
             shown.receive_original(ui.ctx());
@@ -185,21 +185,16 @@ impl MosaicMakerApp {
         self.session.running().is_none()
     }
 
-    /// Puts the Session's newly shown Mosaic on the canvas, uploading its `rendered` picture.
-    fn show(&mut self, ctx: &egui::Context, rendered: &RgbImage) {
-        let mosaic = Arc::clone(self.session.shown().expect("a newly shown Mosaic is shown"));
-        let report = match self.session.outcome() {
-            Some(Outcome::Built(report)) => Some(report.clone()),
-            _ => None,
-        };
+    /// Puts the Session's newly shown Mosaic on the canvas, uploading its rendered picture.
+    fn show(&mut self, ctx: &egui::Context, newly_shown: NewlyShown) {
+        let NewlyShown { mosaic, rendered } = newly_shown;
         self.shown = Some(ShownMosaic {
             mosaic,
             rendered: ctx.load_texture(
                 "mosaic",
-                color_image(rendered),
+                color_image(&rendered),
                 egui::TextureOptions::LINEAR,
             ),
-            report,
             viewport: None,
             thumbnails: ThumbnailTextures::default(),
             pinned: None,
@@ -377,7 +372,7 @@ impl MosaicMakerApp {
         {
             show_export_report(ui, report, &shown.mosaic);
         }
-        if let Some(report) = self.shown.as_ref().and_then(|shown| shown.report.as_ref()) {
+        if let Some(report) = self.session.build_report() {
             ui.add_space(8.0);
             show_build_report(ui, report);
         }
@@ -404,7 +399,7 @@ fn max_texture_side(ctx: &egui::Context) -> u32 {
 /// says it through its report instead.
 fn status(outcome: &Outcome) -> Option<String> {
     Some(match outcome {
-        Outcome::Built(_) => return None,
+        Outcome::Built => return None,
         Outcome::Saved(path) => format!("Saved to {}.", path.display()),
         Outcome::Opened(path) => format!("Opened {}.", path.display()),
         Outcome::Exported(path, _) => format!("Exported to {}.", path.display()),
@@ -415,6 +410,10 @@ fn status(outcome: &Outcome) -> Option<String> {
             Operation::Save(path) => format!("Couldn't save {}: {reason}.", path.display()),
             Operation::Export(path) => format!("Couldn't export {}: {reason}.", path.display()),
         },
+        Outcome::Crashed(Operation::Build) => {
+            "Build failed: the build stopped unexpectedly.".to_owned()
+        }
+        Outcome::Crashed(_) => "Something went wrong with the file.".to_owned(),
     })
 }
 

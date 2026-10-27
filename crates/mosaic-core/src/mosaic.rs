@@ -210,16 +210,13 @@ impl Mosaic {
 
     /// The Mosaic as [`Self::rendered`] draws it, scaled down to fit within `max_side` pixels
     /// square if it is larger, keeping its shape.
-    pub fn rendered_within(&self, max_side: u32) -> Cow<'_, RgbImage> {
+    pub fn rendered_within(&self, max_side: u32) -> RgbImage {
         match analysis::fitted_size(self.rendered.dimensions(), max_side) {
             // A rendered Mosaic can be large, so this favours speed over sharpness.
-            Some((width, height)) => Cow::Owned(imageops::resize(
-                &self.rendered,
-                width,
-                height,
-                FilterType::Triangle,
-            )),
-            None => Cow::Borrowed(&self.rendered),
+            Some((width, height)) => {
+                imageops::resize(&self.rendered, width, height, FilterType::Triangle)
+            }
+            None => self.rendered.clone(),
         }
     }
 

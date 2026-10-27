@@ -2,6 +2,7 @@
 //! may be running, with the outcome of the latest. Operations run through a [`Runner`], so the
 //! Session never touches threads or the GUI itself.
 
+use std::fmt::Display;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::mpsc::{Receiver, TryRecvError, channel};
@@ -18,7 +19,7 @@ pub type Job = Box<dyn FnOnce(&dyn Fn()) + Send>;
 /// Runs the Session's operations away from the UI.
 pub trait Runner {
     /// Runs `job`, then wakes the UI so it polls the Session for how the job ended. A job
-    /// that panics simply ends: the Session reports it as failed.
+    /// that panics simply ends: the Session reports it as crashed.
     fn spawn(&self, job: Job);
 }
 
@@ -45,12 +46,16 @@ pub enum Operation {
 /// How the latest operation ended.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Outcome {
-    Built(BuildReport),
+    /// Built; [`Session::build_report`] says what the build worked around.
+    Built,
     Saved(PathBuf),
     Opened(PathBuf),
     Exported(PathBuf, ExportReport),
     Cancelled,
+    /// Failed for the reason given.
     Failed(Operation, String),
+    /// Stopped by a panic, so there's no reason to give.
+    Crashed(Operation),
 }
 
 /// Why an operation wasn't started.
@@ -88,15 +93,22 @@ impl ReadingOriginal {
     }
 }
 
+/// A Mosaic the Session has just shown, handed to the UI once by [`Session::poll`].
+pub struct NewlyShown {
+    pub mosaic: Arc<Mosaic>,
+    /// Its rendered picture, scaled to fit the texture limit it was opened or built for.
+    pub rendered: RgbImage,
+}
+
 pub struct Session {
     runner: Box<dyn Runner>,
     cache: AnalysisCache,
     setup: Setup,
     shown: Option<Arc<Mosaic>>,
+    build_report: Option<BuildReport>,
     running: Option<Running>,
     outcome: Option<Outcome>,
-    /// The rendered picture of a Mosaic shown since the last [`Session::poll`].
-    newly_shown: Option<RgbImage>,
+    newly_shown: Option<NewlyShown>,
 }
 
 struct Running {
@@ -115,11 +127,38 @@ enum Event {
 
 /// How a job ended.
 enum Finished {
-    /// With a Mosaic to show in place of the shown one, and its rendered picture.
-    Showing(Box<Mosaic>, RgbImage, Outcome),
-    Ended(Outcome),
+    /// With a Mosaic to show in place of the shown one.
+    ShowingMosaic {
+        mosaic: Box<Mosaic>,
+        rendered: RgbImage,
+        /// What the build that made it worked around, for a built Mosaic.
+        report: Option<BuildReport>,
+        outcome: Outcome,
+    },
+    NothingToShow(Outcome),
     /// Failed for this reason.
     Failed(String),
+}
+
+impl Finished {
+    /// Shows `mosaic`, its rendered picture scaled to fit within `max_texture_side`.
+    fn showing(
+        mosaic: Mosaic,
+        max_texture_side: u32,
+        report: Option<BuildReport>,
+        outcome: Outcome,
+    ) -> Self {
+        Finished::ShowingMosaic {
+            rendered: mosaic.rendered_within(max_texture_side),
+            mosaic: Box::new(mosaic),
+            report,
+            outcome,
+        }
+    }
+
+    fn failed(error: impl Display) -> Self {
+        Finished::Failed(error.to_string())
+    }
 }
 
 impl Session {
@@ -129,6 +168,7 @@ impl Session {
             cache,
             setup,
             shown: None,
+            build_report: None,
             running: None,
             outcome: None,
             newly_shown: None,
@@ -141,9 +181,10 @@ impl Session {
         &mut self.setup
     }
 
-    /// The Mosaic shown on the canvas.
-    pub fn shown(&self) -> Option<&Arc<Mosaic>> {
-        self.shown.as_ref()
+    /// What the build that made the shown Mosaic worked around. A build clears it as it
+    /// starts, and opening a Mosaic File clears it too; saving and exporting keep it.
+    pub fn build_report(&self) -> Option<&BuildReport> {
+        self.build_report.as_ref()
     }
 
     /// The operation running now, if any.
@@ -175,6 +216,7 @@ impl Session {
         let cache = self.cache.clone();
         let cancel = CancelToken::new();
         let build_cancel = cancel.clone();
+        self.build_report = None;
         self.start(Operation::Build, Some(cancel), move |send, wake| {
             let result = mosaic_core::build(
                 &target_image,
@@ -189,11 +231,10 @@ impl Session {
             );
             match result {
                 Ok(Built { mosaic, report }) => {
-                    let rendered = mosaic.rendered_within(max_texture_side).into_owned();
-                    Finished::Showing(Box::new(mosaic), rendered, Outcome::Built(report))
+                    Finished::showing(mosaic, max_texture_side, Some(report), Outcome::Built)
                 }
-                Err(BuildError::Cancelled) => Finished::Ended(Outcome::Cancelled),
-                Err(error) => Finished::Failed(error.to_string()),
+                Err(BuildError::Cancelled) => Finished::NothingToShow(Outcome::Cancelled),
+                Err(error) => Finished::failed(error),
             }
         });
         Ok(())
@@ -209,10 +250,9 @@ impl Session {
             None,
             move |_, _| match Mosaic::open(&path) {
                 Ok(mosaic) => {
-                    let rendered = mosaic.rendered_within(max_texture_side).into_owned();
-                    Finished::Showing(Box::new(mosaic), rendered, Outcome::Opened(path))
+                    Finished::showing(mosaic, max_texture_side, None, Outcome::Opened(path))
                 }
-                Err(error) => Finished::Failed(error.to_string()),
+                Err(error) => Finished::failed(error),
             },
         );
         Ok(())
@@ -225,8 +265,8 @@ impl Session {
             Operation::Save(path.clone()),
             None,
             move |_, _| match mosaic.save(&path) {
-                Ok(()) => Finished::Ended(Outcome::Saved(path)),
-                Err(error) => Finished::Failed(error.to_string()),
+                Ok(()) => Finished::NothingToShow(Outcome::Saved(path)),
+                Err(error) => Finished::failed(error),
             },
         );
         Ok(())
@@ -239,8 +279,8 @@ impl Session {
             Operation::Export(path.clone()),
             None,
             move |_, _| match mosaic.export_png(&path, tile_size) {
-                Ok(report) => Finished::Ended(Outcome::Exported(path, report)),
-                Err(error) => Finished::Failed(error.to_string()),
+                Ok(report) => Finished::NothingToShow(Outcome::Exported(path, report)),
+                Err(error) => Finished::failed(error),
             },
         );
         Ok(())
@@ -280,36 +320,43 @@ impl Session {
         }
     }
 
-    /// Takes in what the running operation has sent, and returns the rendered picture of a
-    /// Mosaic newly shown since the last poll, for the UI to upload. Call it every frame.
-    pub fn poll(&mut self) -> Option<RgbImage> {
+    /// Takes in what the running operation has sent, and hands over a Mosaic newly shown since
+    /// the last poll, for the UI to upload. Call it every frame.
+    pub fn poll(&mut self) -> Option<NewlyShown> {
         if let Some(running) = &mut self.running {
-            let finished = loop {
+            let ended = loop {
                 match running.events.try_recv() {
                     Ok(Event::Progress(progress)) => running.progress = Some(progress),
-                    Ok(Event::Finished(finished)) => break Some(finished),
+                    Ok(Event::Finished(finished)) => break Some(Some(finished)),
                     Err(TryRecvError::Empty) => break None,
                     // The job panicked before it finished.
-                    Err(TryRecvError::Disconnected) => {
-                        break Some(Finished::Failed("it stopped unexpectedly".to_owned()));
-                    }
+                    Err(TryRecvError::Disconnected) => break Some(None),
                 }
             };
-            if let Some(finished) = finished {
+            if let Some(finished) = ended {
                 let operation = self
                     .running
                     .take()
                     .expect("an operation is running")
                     .operation;
-                self.finish(operation, finished);
+                self.outcome = Some(match finished {
+                    Some(finished) => self.finish(operation, finished),
+                    None => Outcome::Crashed(operation),
+                });
             }
         }
         self.newly_shown.take()
     }
 
-    fn finish(&mut self, operation: Operation, finished: Finished) {
-        self.outcome = Some(match finished {
-            Finished::Showing(mosaic, rendered, outcome) => {
+    /// Takes over what `operation` made, and says how it ended.
+    fn finish(&mut self, operation: Operation, finished: Finished) -> Outcome {
+        match finished {
+            Finished::ShowingMosaic {
+                mosaic,
+                rendered,
+                report,
+                outcome,
+            } => {
                 if let Outcome::Opened(_) = outcome {
                     self.setup = Setup {
                         target_image: Some(mosaic.target_image().to_owned()),
@@ -317,13 +364,15 @@ impl Session {
                         settings: mosaic.settings().clone(),
                     };
                 }
-                self.shown = Some(Arc::new(*mosaic));
-                self.newly_shown = Some(rendered);
+                let mosaic = Arc::new(*mosaic);
+                self.shown = Some(Arc::clone(&mosaic));
+                self.build_report = report;
+                self.newly_shown = Some(NewlyShown { mosaic, rendered });
                 outcome
             }
-            Finished::Ended(outcome) => outcome,
+            Finished::NothingToShow(outcome) => outcome,
             Finished::Failed(reason) => Outcome::Failed(operation, reason),
-        });
+        }
     }
 
     fn refuse_if_busy(&self) -> Result<(), Refused> {
