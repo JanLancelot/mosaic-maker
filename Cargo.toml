@@ -4,6 +4,7 @@ members = ["crates/mosaic-core", "crates/mosaic-app"]
 
 [workspace.package]
 edition = "2024"
+license = "MIT OR Apache-2.0"
 
 # Image decoding is painfully slow unoptimised; keep dependencies fast in dev builds.
 [profile.dev.package."*"]
