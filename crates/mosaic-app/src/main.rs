@@ -184,23 +184,26 @@ impl MosaicMakerApp {
         ui.label(display_path(self.source_library.as_deref()));
         ui.add_space(8.0);
 
-        ui.label("Tiles Across");
+        let label = ui.label("Tiles Across");
         ui.add_enabled(
             idle,
             egui::DragValue::new(&mut self.tiles_across).range(1..=300),
-        );
+        )
+        .labelled_by(label.id);
         ui.add_space(8.0);
 
-        ui.label("Repeat Radius");
+        let label = ui.label("Repeat Radius");
         ui.add_enabled(
             idle,
             egui::DragValue::new(&mut self.repeat_radius).range(0..=20),
-        );
+        )
+        .labelled_by(label.id);
         ui.add_space(8.0);
 
-        ui.label("Seed");
+        let label = ui.label("Seed");
         ui.horizontal(|ui| {
-            ui.add_enabled(idle, egui::DragValue::new(&mut self.seed));
+            ui.add_enabled(idle, egui::DragValue::new(&mut self.seed))
+                .labelled_by(label.id);
             if ui
                 .add_enabled(idle, egui::Button::new("Randomise"))
                 .clicked()
