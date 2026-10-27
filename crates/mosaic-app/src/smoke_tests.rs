@@ -1,5 +1,8 @@
 //! Smoke tests: they drive the window headlessly to check it is wired up, and save a
 //! screenshot for PRs. What the window shows is computed and tested in `mosaic-core`.
+//!
+//! Open a collapsing section with `click_accesskit()`: a pointer `click()` doesn't open one
+//! here.
 
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -86,6 +89,8 @@ impl Fixture {
         };
         let mut harness = window(app);
         harness.get_by_label("Generate").click();
+        // Otherwise screenshots show Generate hovered.
+        harness.remove_cursor();
         run_until(&mut harness, "the build", |harness| {
             harness.query_by_label_contains("Built from").is_some()
         });
