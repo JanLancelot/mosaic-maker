@@ -8,3 +8,7 @@ eframe = "0.37"
 image = { version = "0.25", default-features = false }
 mosaic-core = { path = "../mosaic-core" }
 rfd = "0.17"
+
+[dev-dependencies]
+egui_kittest = { version = "0.37", features = ["eframe", "wgpu"] }
+tempfile = "3"
