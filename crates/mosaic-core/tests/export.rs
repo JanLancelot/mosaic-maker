@@ -1,28 +1,8 @@
 mod common;
 
-use common::{BLUE, Fixture, GREEN, RED, solid};
+use common::{BLUE, Fixture, GREEN, RED, STRIPES, solid, striped_mosaic, tile};
 use image::{Rgb, RgbImage};
-use mosaic_core::{BuildSettings, Mosaic, Tile};
-
-fn tile(column: u32, row: u32) -> Tile {
-    Tile { column, row }
-}
-
-/// A 3 × 2 Mosaic, Repeat Radius 0, whose Tiles are red, blue, red / green, red, blue.
-fn striped_mosaic(fixture: &Fixture) -> Mosaic {
-    fixture.add_source_image("red.png", &solid(8, 8, RED));
-    fixture.add_source_image("colors/blue.png", &solid(8, 8, BLUE));
-    fixture.add_source_image("colors/green.png", &solid(8, 8, GREEN));
-    let colors = [[RED, BLUE, RED], [GREEN, RED, BLUE]];
-    let target = RgbImage::from_fn(30, 20, |x, y| colors[(y / 10) as usize][(x / 10) as usize]);
-    let target_image = fixture.set_target_image(&target);
-    let settings = BuildSettings {
-        tiles_across: 3,
-        repeat_radius: 0,
-        seed: 0,
-    };
-    fixture.build_with_settings(&target_image, &settings).mosaic
-}
+use mosaic_core::{Mosaic, Tile};
 
 /// Asserts that every pixel of `tile` in `exported`, at `tile_size` pixels per Tile, is `color`.
 fn assert_tile_is(exported: &RgbImage, tile: Tile, tile_size: u32, color: Rgb<u8>) {
@@ -47,8 +27,7 @@ fn an_exported_png_has_the_chosen_size_per_tile() {
 
     let exported = image::open(&path).unwrap().into_rgb8();
     assert_eq!(exported.dimensions(), (3 * 64, 2 * 64));
-    let colors = [[RED, BLUE, RED], [GREEN, RED, BLUE]];
-    for (row, colors) in (0..).zip(colors) {
+    for (row, colors) in (0..).zip(STRIPES) {
         for (column, color) in (0..).zip(colors) {
             assert_tile_is(&exported, tile(column, row), 64, color);
         }

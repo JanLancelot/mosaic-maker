@@ -1,19 +1,7 @@
 mod common;
 
-use common::{BLUE, Fixture, GREEN, RED, solid, tiles};
-use image::RgbImage;
-use mosaic_core::{BuildSettings, Mosaic, OpenError, Tile};
-
-/// A 3 × 2 Mosaic whose Tiles are red, blue, red / green, red, blue, built with these settings.
-fn striped_mosaic(fixture: &Fixture, settings: &BuildSettings) -> Mosaic {
-    fixture.add_source_image("red.png", &solid(8, 8, RED));
-    fixture.add_source_image("colors/blue.png", &solid(8, 8, BLUE));
-    fixture.add_source_image("colors/green.png", &solid(8, 8, GREEN));
-    let colors = [[RED, BLUE, RED], [GREEN, RED, BLUE]];
-    let target = RgbImage::from_fn(30, 20, |x, y| colors[(y / 10) as usize][(x / 10) as usize]);
-    let target_image = fixture.set_target_image(&target);
-    fixture.build_with_settings(&target_image, settings).mosaic
-}
+use common::{Fixture, striped_mosaic_with, tile, tiles};
+use mosaic_core::{BuildSettings, Mosaic, OpenError};
 
 const SETTINGS: BuildSettings = BuildSettings {
     tiles_across: 3,
@@ -24,7 +12,7 @@ const SETTINGS: BuildSettings = BuildSettings {
 #[test]
 fn an_opened_mosaic_has_the_saved_settings_grid_tiles_and_inspect_results() {
     let fixture = Fixture::new();
-    let mosaic = striped_mosaic(&fixture, &SETTINGS);
+    let mosaic = striped_mosaic_with(&fixture, &SETTINGS);
     let path = fixture.path("striped.mosaic");
 
     mosaic.save(&path).unwrap();
@@ -34,7 +22,7 @@ fn an_opened_mosaic_has_the_saved_settings_grid_tiles_and_inspect_results() {
     assert_eq!(opened.target_image(), fixture.path("target.png"));
     assert_eq!(opened.source_library(), fixture.source_library());
     assert_eq!((opened.tiles_across(), opened.rows()), (3, 2));
-    let blue = opened.source_image_at(Tile { column: 1, row: 0 }).unwrap();
+    let blue = opened.source_image_at(tile(1, 0)).unwrap();
     assert_eq!(blue.file_name(), "blue.png");
     assert_eq!(
         opened.path_of(blue),
@@ -56,7 +44,7 @@ fn an_opened_mosaic_has_the_saved_settings_grid_tiles_and_inspect_results() {
 #[test]
 fn a_saved_mosaic_opens_and_is_inspectable_after_its_source_library_is_deleted() {
     let fixture = Fixture::new();
-    let mosaic = striped_mosaic(&fixture, &SETTINGS);
+    let mosaic = striped_mosaic_with(&fixture, &SETTINGS);
     let path = fixture.path("striped.mosaic");
     mosaic.save(&path).unwrap();
     std::fs::remove_dir_all(fixture.source_library()).unwrap();
@@ -72,7 +60,7 @@ fn a_saved_mosaic_opens_and_is_inspectable_after_its_source_library_is_deleted()
         assert!(opened.tiles_filled_by(source_image.id()).contains(&tile));
         assert_eq!(opened.original(source_image, 100), None, "{tile:?}");
     }
-    let blue = opened.source_image_at(Tile { column: 1, row: 0 }).unwrap();
+    let blue = opened.source_image_at(tile(1, 0)).unwrap();
     assert_eq!(blue.file_name(), "blue.png");
     assert_eq!(
         opened.path_of(blue),
@@ -93,7 +81,9 @@ fn opening_a_file_that_isnt_a_mosaic_is_an_error() {
 fn opening_a_truncated_mosaic_file_is_an_error() {
     let fixture = Fixture::new();
     let path = fixture.path("striped.mosaic");
-    striped_mosaic(&fixture, &SETTINGS).save(&path).unwrap();
+    striped_mosaic_with(&fixture, &SETTINGS)
+        .save(&path)
+        .unwrap();
     let bytes = std::fs::read(&path).unwrap();
     std::fs::write(&path, &bytes[..bytes.len() / 2]).unwrap();
 
@@ -115,7 +105,9 @@ fn saving_over_an_existing_file_replaces_it() {
     let path = fixture.path("striped.mosaic");
     std::fs::write(&path, b"an older file").unwrap();
 
-    striped_mosaic(&fixture, &SETTINGS).save(&path).unwrap();
+    striped_mosaic_with(&fixture, &SETTINGS)
+        .save(&path)
+        .unwrap();
 
     assert_eq!(*Mosaic::open(&path).unwrap().settings(), SETTINGS);
 }

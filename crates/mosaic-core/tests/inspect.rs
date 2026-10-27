@@ -2,29 +2,9 @@ mod common;
 
 use std::collections::HashSet;
 
-use common::{BLUE, Fixture, GREEN, RED, solid, tiles};
+use common::{BLUE, Fixture, GREEN, RED, solid, striped_mosaic, tile, tiles};
 use image::{Rgb, RgbImage};
-use mosaic_core::{AnalysisCache, BuildSettings, CancelToken, Mosaic, THUMBNAIL_SIZE, Tile, build};
-
-fn tile(column: u32, row: u32) -> Tile {
-    Tile { column, row }
-}
-
-/// A 3 × 2 Mosaic, Repeat Radius 0, whose Tiles are red, blue, red / green, red, blue.
-fn striped_mosaic(fixture: &Fixture) -> Mosaic {
-    fixture.add_source_image("red.png", &solid(8, 8, RED));
-    fixture.add_source_image("colors/blue.png", &solid(8, 8, BLUE));
-    fixture.add_source_image("colors/green.png", &solid(8, 8, GREEN));
-    let colors = [[RED, BLUE, RED], [GREEN, RED, BLUE]];
-    let target = RgbImage::from_fn(30, 20, |x, y| colors[(y / 10) as usize][(x / 10) as usize]);
-    let target_image = fixture.set_target_image(&target);
-    let settings = BuildSettings {
-        tiles_across: 3,
-        repeat_radius: 0,
-        seed: 0,
-    };
-    fixture.build_with_settings(&target_image, &settings).mosaic
-}
+use mosaic_core::{AnalysisCache, BuildSettings, CancelToken, THUMBNAIL_SIZE, Tile, build};
 
 #[test]
 fn every_tile_a_source_image_fills_is_found() {
