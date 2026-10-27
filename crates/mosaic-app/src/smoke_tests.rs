@@ -26,9 +26,13 @@ const TILE_PIXELS: u32 = 10;
 /// How long a build or reading an Original may take before a test gives up.
 const TIMEOUT: Duration = Duration::from_secs(60);
 
-/// Where screenshots are saved, to attach to PRs.
+/// Where screenshots are saved, to attach to PRs: `screenshots` in the target folder.
 fn screenshots_folder() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/screenshots")
+    let target = std::env::var_os("CARGO_TARGET_DIR").map_or_else(
+        || Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target"),
+        PathBuf::from,
+    );
+    target.join("screenshots")
 }
 
 /// A Source Library with one solid Source Image per stripe, and a striped Target Image.
@@ -38,12 +42,13 @@ struct Fixture {
 
 impl Fixture {
     fn new() -> Self {
-        let dir = TempDir::new().unwrap();
-        let source_library = dir.path().join("library");
-        std::fs::create_dir(&source_library).unwrap();
+        let fixture = Fixture {
+            dir: TempDir::new().unwrap(),
+        };
+        std::fs::create_dir(fixture.source_library()).unwrap();
         for (file_name, color) in STRIPES {
             RgbImage::from_pixel(64, 64, color)
-                .save(source_library.join(file_name))
+                .save(fixture.source_library().join(file_name))
                 .unwrap();
         }
         let stripe_pixels = TILES_ACROSS / STRIPES.len() as u32 * TILE_PIXELS;
@@ -51,15 +56,23 @@ impl Fixture {
             RgbImage::from_fn(TILES_ACROSS * TILE_PIXELS, ROWS * TILE_PIXELS, |x, _| {
                 STRIPES[(x / stripe_pixels) as usize].1
             });
-        target_image.save(dir.path().join("target.png")).unwrap();
-        Fixture { dir }
+        target_image.save(fixture.target_image()).unwrap();
+        fixture
+    }
+
+    fn target_image(&self) -> PathBuf {
+        self.dir.path().join("target.png")
+    }
+
+    fn source_library(&self) -> PathBuf {
+        self.dir.path().join("library")
     }
 
     /// The window with the Target Image and Source Library chosen, built with Generate.
     fn built_app(&self) -> Harness<'static, MosaicMakerApp> {
         let app = MosaicMakerApp {
-            target_image: Some(self.dir.path().join("target.png")),
-            source_library: Some(self.dir.path().join("library")),
+            target_image: Some(self.target_image()),
+            source_library: Some(self.source_library()),
             tiles_across: TILES_ACROSS,
             // Each stripe is filled by its own Source Image throughout.
             repeat_radius: 0,
@@ -131,7 +144,7 @@ fn clicking_a_tile_pins_its_source_image_and_escape_unpins_it() {
 }
 
 #[test]
-fn screenshot_with_a_tile_pinned() {
+fn a_screenshot_is_saved_with_a_tile_pinned() {
     let fixture = Fixture::new();
     let mut harness = fixture.built_app();
     click_tile(&mut harness, Tile { column: 4, row: 1 });
