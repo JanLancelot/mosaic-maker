@@ -2,15 +2,15 @@
 
 Rebuild a picture out of thousands of others, then click any square to see which one it is.
 
-![Hokusai's Great Wave, rebuilt from thousands of public-domain artworks](docs/images/great-wave.png)
+![Hokusai's Great Wave, rebuilt from 1,148 public-domain artworks](docs/images/great-wave.png)
 
-That's Hokusai's *Great Wave*, made of the museum around it: thousands of other public-domain artworks, each one cropped to a square and never recolored. Click any square in the app and it tells you which artwork sits there.
+That's Hokusai's *Great Wave*, made of a museum: 1,148 public-domain artworks from the Cleveland Museum of Art, each one cropped to a square and never recolored. Click any square in the app and it tells you which artwork sits there.
 
 ![The Great Wave in Mosaic Maker, with one square clicked: the artwork that fills it is shown in full on the right, and every other square it fills is highlighted](docs/images/inspect.png)
 
 Each square is a **Tile**. Click one and the panel on the right shows the artwork that fills it at full size, with its file name and where it lives on your computer. Every other Tile that artwork fills lights up, so you can see everywhere it landed.
 
-![A close-up of the Great Wave mosaic, where each square is a recognizable painting in its original colors](docs/images/great-wave-closeup.png)
+![A close-up of the Great Wave Mosaic, where each square is a recognizable artwork in its original colors](docs/images/great-wave-closeup.png)
 
 Every Tile is someone's work, so Mosaic Maker never recolors one to fit. Most mosaic makers tint each picture toward the color its spot needs, which makes a closer copy and misrepresents the art. Here the likeness comes from choosing the right picture, not from changing it.
 
@@ -76,7 +76,7 @@ The decisions that look strange are written down in [docs/adr/](docs/adr/): why 
 
 ## Credits
 
-The Great Wave mosaic in this README is built entirely from public-domain artworks. Every one of them is listed, with its title and artist, in [CREDITS.md](CREDITS.md).
+The Great Wave Mosaic in this README is built entirely from public-domain artworks: Hokusai's print is from The Metropolitan Museum of Art, and every Tile is filled from the Cleveland Museum of Art's open-access collection. Every one of them is listed, with its title and artist, in [CREDITS.md](CREDITS.md).
 
 ## License
 
