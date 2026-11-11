@@ -1,6 +1,9 @@
 //! Mosaic Maker's window: gathers input, runs operations through a [`Session`], and shows the
 //! Mosaic on a canvas to pan, zoom and inspect. Its File menu saves, opens and exports Mosaics.
 
+// Release builds open on Windows without a console window behind them.
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 use std::collections::{HashMap, HashSet};
 use std::hash::{BuildHasher, RandomState};
 use std::panic::AssertUnwindSafe;
@@ -675,8 +678,18 @@ fn highlight(painter: &egui::Painter, rect: egui::Rect) {
     );
 }
 
-/// Shows the file at `path` in Finder, or its folder in the platform's file manager.
+/// Shows the file at `path` in Finder or File Explorer, or its folder in the platform's file
+/// manager.
 fn reveal_in_finder(path: &Path) -> std::io::Result<()> {
+    if cfg!(windows) {
+        // File Explorer exits with a failure status even when it shows the file, so only failing
+        // to start it is an error.
+        Command::new("explorer")
+            .arg("/select,")
+            .arg(path)
+            .status()?;
+        return Ok(());
+    }
     let mut command;
     if cfg!(target_os = "macos") {
         command = Command::new("open");

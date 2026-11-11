@@ -1,0 +1,103 @@
+name: Release
+
+# Pushing a version tag (v0.1.0) builds Mosaic Maker for macOS, Windows and Linux and drafts a
+# GitHub release with the builds attached, to be checked and published by hand. A PR that changes
+# how the builds are made builds them too, without releasing, and keeps them as run artifacts.
+on:
+  push:
+    tags: ["v*"]
+  pull_request:
+    paths:
+      - .github/workflows/release.yml
+      - scripts/bundle-macos-app.sh
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin, x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --release --locked -p mosaic-app --target aarch64-apple-darwin
+      - run: cargo build --release --locked -p mosaic-app --target x86_64-apple-darwin
+      # One app that runs natively on both Apple silicon and Intel Macs.
+      - run: |
+          mkdir dist
+          scripts/bundle-macos-app.sh dist/mosaic-maker-macos.zip \
+            target/aarch64-apple-darwin/release/mosaic-app \
+            target/x86_64-apple-darwin/release/mosaic-app
+      - uses: actions/upload-artifact@v7
+        with:
+          name: macos
+          path: dist/mosaic-maker-macos.zip
+          if-no-files-found: error
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --release --locked -p mosaic-app
+      - shell: pwsh
+        run: |
+          New-Item -ItemType Directory dist/mosaic-maker | Out-Null
+          Copy-Item target/release/mosaic-app.exe "dist/mosaic-maker/Mosaic Maker.exe"
+          Copy-Item LICENSE-MIT, LICENSE-APACHE dist/mosaic-maker/
+          Compress-Archive -Path dist/mosaic-maker -DestinationPath dist/mosaic-maker-windows-x86_64.zip
+      - uses: actions/upload-artifact@v7
+        with:
+          name: windows
+          path: dist/mosaic-maker-windows-x86_64.zip
+          if-no-files-found: error
+
+  linux:
+    # The oldest supported image, so the build runs on distributions with an older glibc too.
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --release --locked -p mosaic-app
+      - run: |
+          mkdir -p dist/mosaic-maker
+          cp target/release/mosaic-app dist/mosaic-maker/mosaic-maker
+          cp LICENSE-MIT LICENSE-APACHE dist/mosaic-maker/
+          tar -C dist -czf dist/mosaic-maker-linux-x86_64.tar.gz mosaic-maker
+      - uses: actions/upload-artifact@v7
+        with:
+          name: linux
+          path: dist/mosaic-maker-linux-x86_64.tar.gz
+          if-no-files-found: error
+
+  release:
+    if: github.event_name == 'push'
+    needs: [macos, windows, linux]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - name: The tag is mosaic-app's version
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"$/\1/p' crates/mosaic-app/Cargo.toml)
+          if [ "$GITHUB_REF_NAME" != "v$version" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME doesn't match mosaic-app's version $version"
+            exit 1
+          fi
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Draft the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/* --draft --verify-tag \
+            --title "Mosaic Maker $GITHUB_REF_NAME" --generate-notes
