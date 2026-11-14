@@ -572,7 +572,7 @@ impl ShownMosaic {
 
         ui.heading("Source Image");
         ui.add_space(8.0);
-        let (shown, caption) = match &pinned.original {
+        let (shown, note) = match &pinned.original {
             Original::Shown(texture) => (texture.clone(), None),
             Original::Loading(_) => (
                 self.thumbnails.texture(ui.ctx(), source_image),
@@ -585,8 +585,8 @@ impl ShownMosaic {
         };
         let side = ui.available_width();
         ui.add(egui::Image::new(&shown).max_size(egui::vec2(side, side)));
-        if let Some(caption) = caption {
-            ui.weak(caption);
+        if let Some(note) = note {
+            ui.weak(note);
         }
         if let Some(credit) = source_image.credit() {
             ui.add_space(8.0);

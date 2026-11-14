@@ -224,7 +224,7 @@ fn saving_over_an_existing_file_replaces_it() {
     assert_eq!(*Mosaic::open(&path).unwrap().settings(), SETTINGS);
 }
 
-/// Rewrites `format_version` in the manifest of the Mosaic File at `path`, copying every other
+/// Rewrites `format_version` in the `manifest.json` of the Mosaic File at `path`, copying every other
 /// entry as it is.
 fn set_format_version(path: &Path, format_version: u32) {
     let mut zip = zip::ZipArchive::new(File::open(path).unwrap()).unwrap();
@@ -235,9 +235,9 @@ fn set_format_version(path: &Path, format_version: u32) {
         let mut contents = Vec::new();
         entry.read_to_end(&mut contents).unwrap();
         if name == "manifest.json" {
-            let mut manifest: serde_json::Value = serde_json::from_slice(&contents).unwrap();
-            manifest["format_version"] = format_version.into();
-            contents = serde_json::to_vec(&manifest).unwrap();
+            let mut manifest_json: serde_json::Value = serde_json::from_slice(&contents).unwrap();
+            manifest_json["format_version"] = format_version.into();
+            contents = serde_json::to_vec(&manifest_json).unwrap();
         }
         rewritten
             .start_file(name, zip::write::SimpleFileOptions::default())

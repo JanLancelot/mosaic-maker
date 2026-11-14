@@ -20,7 +20,7 @@ use crate::mosaic::{
     Mosaic, RENDERED_TILE_SIZE, SourceImage, SourceImageId, THUMBNAIL_SIZE, TargetImage,
 };
 
-/// Bump whenever the manifest's layout or meaning changes, and keep opening the older versions
+/// Bump whenever the layout or meaning of `manifest.json` changes, and keep opening the older versions
 /// in [`OPENABLE_FORMAT_VERSIONS`]. Files of any other version are refused rather than misread.
 ///
 /// Version 2 added Credits; a version 1 file opens with no Credits.
@@ -51,7 +51,7 @@ struct Manifest {
     tiles: Vec<usize>,
 }
 
-/// Read first, so a file of another version is refused before its manifest is misread.
+/// Read first, so a file of another version is refused before its `manifest.json` is misread.
 #[derive(Deserialize)]
 struct Version {
     format_version: u32,
@@ -76,7 +76,7 @@ struct Grid {
 struct SourceImageEntry {
     /// The Source Image's identity, as 64 hex digits.
     id: String,
-    /// For people reading the manifest; opening takes the name from `last_known_path`.
+    /// For people reading `manifest.json`; opening takes the name from `last_known_path`.
     file_name: String,
     /// Relative to `source_library`.
     last_known_path: PathBuf,
@@ -212,8 +212,8 @@ impl Mosaic {
         let file = File::open(path).map_err(OpenError::Unreadable)?;
         let mut zip = ZipArchive::new(BufReader::new(file)).map_err(corrupt)?;
 
-        let manifest = read_entry(&mut zip, MANIFEST)?;
-        let Version { format_version } = serde_json::from_slice(&manifest).map_err(corrupt)?;
+        let manifest_json = read_entry(&mut zip, MANIFEST)?;
+        let Version { format_version } = serde_json::from_slice(&manifest_json).map_err(corrupt)?;
         if !OPENABLE_FORMAT_VERSIONS.contains(&format_version) {
             return Err(OpenError::UnsupportedVersion(format_version));
         }
@@ -225,7 +225,7 @@ impl Mosaic {
             source_library,
             source_images,
             tiles,
-        } = serde_json::from_slice(&manifest).map_err(corrupt)?;
+        } = serde_json::from_slice(&manifest_json).map_err(corrupt)?;
 
         if grid.columns != settings.tiles_across || grid.columns == 0 || grid.rows == 0 {
             return Err(corrupt("the grid doesn't match Tiles Across"));
