@@ -1,6 +1,6 @@
 //! The Credits Files a build reads: the one at the root of the Source Library, crediting its
 //! Source Images, and the one beside the Target Image, crediting it. When the Target Image sits
-//! at the root of the Source Library, they are the same file.
+//! at the root of the Source Library, they are the same file. Any other is ignored.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -19,7 +19,8 @@ pub(crate) struct CreditsFiles {
 impl CreditsFiles {
     /// Reads the Credits Files of a build of `target_image` from `source_library`, and takes
     /// them out of `files`, the files the Source Library holds, so they aren't considered as
-    /// Source Images. Their problems are warnings: one that can't be read or parsed, rows of
+    /// Source Images. Any other Credits File in the Source Library is taken out too, and
+    /// warned about as ignored. Their problems are warnings: one that can't be read or parsed, rows of
     /// the Source Library's that name none of `files` (except the Target Image's own when the
     /// two share the file), and paths listed more than once (only the Target Image's own in a
     /// Credits File that credits only it, since its other rows are ignored).
@@ -37,6 +38,14 @@ impl CreditsFiles {
         if let Some(folder) = target_image_folder {
             take(files, &folder.join(CREDITS_FILE_NAME));
         }
+        // Any other Credits File is ignored, rather than skipped as a picture.
+        files.retain(|file| {
+            let is_credits_file = file.file_name() == Some(CREDITS_FILE_NAME.as_ref());
+            if is_credits_file {
+                warnings.push(BuildWarning::IgnoredCreditsFile { path: file.clone() });
+            }
+            !is_credits_file
+        });
 
         let source_library_credits = if has_source_library_file {
             let credits = Credits::read(

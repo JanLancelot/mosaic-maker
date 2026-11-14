@@ -601,3 +601,21 @@ fn the_credits_file_beside_a_target_image_in_a_source_library_subfolder_is_not_c
         Some("Red Fuji")
     );
 }
+
+#[test]
+fn a_credits_file_in_another_subfolder_is_ignored_with_a_warning_rather_than_skipped() {
+    let fixture = Fixture::new();
+    fixture.add_file("prints/credits.csv", b"path,title\nred.png,Red Fuji\n");
+
+    let built = build_red_and_blue(&fixture);
+
+    assert_eq!(
+        built.report.warnings,
+        [BuildWarning::IgnoredCreditsFile {
+            path: "prints/credits.csv".into(),
+        }]
+    );
+    assert_eq!(built.report.skipped_files().count(), 0);
+    assert_eq!(built.report.credits_file_problems().count(), 1);
+    assert!(red(&built.mosaic).credit().is_none());
+}

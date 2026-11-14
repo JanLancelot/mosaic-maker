@@ -26,6 +26,7 @@ impl BuildReport {
                 BuildWarning::UnreadableCreditsFile { .. }
                     | BuildWarning::UnknownCreditsPaths { .. }
                     | BuildWarning::DuplicateCreditsPath { .. }
+                    | BuildWarning::IgnoredCreditsFile { .. }
             )
         })
     }
@@ -63,6 +64,9 @@ pub enum BuildWarning {
         credits_file: CreditsFileOf,
         path: String,
     },
+    /// A Credits File at `path`, relative to the Source Library, that is neither the Source
+    /// Library's nor the Target Image's, so the build didn't read it.
+    IgnoredCreditsFile { path: PathBuf },
 }
 
 impl fmt::Display for BuildWarning {
@@ -92,6 +96,12 @@ impl fmt::Display for BuildWarning {
             BuildWarning::DuplicateCreditsPath { credits_file, path } => write!(
                 f,
                 "{credits_file} lists {path} more than once; its first row is used"
+            ),
+            BuildWarning::IgnoredCreditsFile { path } => write!(
+                f,
+                "ignored {}: only the Credits Files at the Source Library's root and beside \
+                 the Target Image are read",
+                path.display()
             ),
         }
     }
