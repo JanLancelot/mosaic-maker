@@ -215,3 +215,25 @@ fn every_field_is_escaped_for_markdown_with_its_whitespace_collapsed() {
         "{list}"
     );
 }
+
+#[test]
+fn the_without_a_credit_section_is_left_out_when_every_source_image_has_a_credit() {
+    let fixture = Fixture::new();
+    fixture.add_file(
+        "credits.csv",
+        b"path,title\nred.png,Red\ncolors/blue.png,Blue\ncolors/green.png,Green\n",
+    );
+    let mosaic = striped_mosaic(&fixture);
+
+    let list = mosaic.credits_list();
+
+    assert!(
+        list.ends_with(
+            "| --- | --- | --- | --- | ---: |\n\
+             |  | Blue |  |  | 2 |\n\
+             |  | Green |  |  | 1 |\n\
+             |  | Red |  |  | 3 |\n"
+        ),
+        "{list}"
+    );
+}
