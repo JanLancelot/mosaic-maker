@@ -14,7 +14,7 @@ Each square is a **Tile**. Click one and the panel on the right shows the artwor
 
 Every Tile is someone's work, so Mosaic Maker never recolors one to fit. Most mosaic makers tint each picture toward the color its spot needs, which makes a closer copy and misrepresents the art. Here the likeness comes from choosing the right picture, not from changing it.
 
-Today a click tells you which file a Tile came from. The goal is for it to tell you who made it.
+Give your pictures [Credits](#credits) and a click tells you who made each one, too.
 
 ## Download
 
@@ -35,6 +35,29 @@ Get the latest version for macOS, Windows or Linux from the [Releases page](http
 **File → Save…** writes the Mosaic to a single `.mosaic` file. It carries a small **Thumbnail** of every picture in it, so it opens without the folder it was built from: for you next month after you've reorganized your pictures, or for a friend who never had them. Send it to someone and the credit goes with it: they can click any Tile and see which artwork sits there.
 
 When a picture's file has been moved, renamed, edited or deleted since the build, or was never on this computer, the panel shows its Thumbnail instead of the full-size **Original**.
+
+## Credits
+
+Every Tile is someone's work, so each picture can have a **Credit**: its artist, title, date, collection and link. Credits come from a **Credits File**, a `credits.csv` you write in a spreadsheet or generate from a script:
+
+- the one at the root of the Source Library credits its pictures;
+- the one beside the Target Image credits the Target Image. When the Target Image sits at the root of the Source Library, one file credits both.
+
+The first row names the columns: `path`, then any of `artist`, `title`, `date`, `collection` and `link`, in any order.
+
+```csv
+path,artist,title,date,collection,link
+etchings/appian-san-remo.jpg,"Adolphe Appian (French, 1818–1898)",The Port at San Remo,1878,CMA 2001.103,https://clevelandart.org/art/2001.103
+bookplates/truesdell.jpg,,Bookplate: Amy Ivers Truesdell,1901,CMA 1920.1413,https://clevelandart.org/art/1920.1413
+```
+
+`path` is the picture's file relative to the Credits File's folder, written with `/` on every platform. Every other field is free text, kept as written, and an empty cell means unknown. A picture without a row simply has no Credit, and columns the app doesn't know are ignored, so you can keep your own notes beside them. A Credits File that can't be read, a path that names no file, or a path listed twice shows up with the build's other warnings, and the build carries on.
+
+Credits are fixed when a Mosaic is built: each is attached to its picture and saved in the `.mosaic` file, so the Mosaic keeps its Credits even after the Credits File changes or disappears. After editing a Credits File, press **Generate** again. Credits never change which picture fills which Tile.
+
+Click a Tile and the panel shows its picture's Credit under it, with the title linked to the artwork's web page.
+
+**File → Save Credits List…** writes a Markdown **Credits List**: the Target Image's Credit, then a table of every picture in the Mosaic with its Credit and how many Tiles it fills, sorted by artist, then any pictures still without a Credit, so you can see what's left. Write your own introduction around it and publish it: this project's [CREDITS.md](CREDITS.md) is one.
 
 ## Print it
 
@@ -74,9 +97,9 @@ The words in the window are the words in the code. [GLOSSARY.md](GLOSSARY.md) de
 
 The decisions that look strange are written down in [docs/adr/](docs/adr/): why the app uses egui rather than a web UI, why Tiles are never tinted, and why a picture is identified by its contents rather than its path.
 
-## Credits
+## Artwork in this README
 
-The Great Wave Mosaic in this README is built entirely from public-domain artworks: Hokusai's print is from The Metropolitan Museum of Art, and every Tile is filled from the Cleveland Museum of Art's open-access collection. Every one of them is listed, with its title and artist, in [CREDITS.md](CREDITS.md).
+The Great Wave Mosaic in this README is built entirely from public-domain artworks: Hokusai's print is from The Metropolitan Museum of Art, and every Tile is filled from the Cleveland Museum of Art's open-access collection. Every one of them is listed, with its title and artist, in [CREDITS.md](CREDITS.md), a Credits List saved by the app.
 
 ## License
 
