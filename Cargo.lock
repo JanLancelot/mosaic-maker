@@ -1951,7 +1951,7 @@ dependencies = [
 
 [[package]]
 name = "mosaic-app"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "eframe",
  "egui_kittest",
@@ -1963,7 +1963,7 @@ dependencies = [
 
 [[package]]
 name = "mosaic-core"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "blake3",
  "csv",
