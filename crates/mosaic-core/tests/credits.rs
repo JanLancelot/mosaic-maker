@@ -3,9 +3,11 @@
 
 mod common;
 
-use common::{BLUE, Fixture, RED, solid};
+use std::path::Path;
+
+use common::{BLUE, Fixture, RED, solid, striped_mosaic_with, tiles};
 use image::{Rgb, RgbImage};
-use mosaic_core::{BuildSettings, Mosaic, SourceImage, Tile};
+use mosaic_core::{BuildSettings, Mosaic, SourceImage, SourceImageId, Tile};
 
 /// A 2 × 1 Mosaic whose left Tile is filled from `red.png` and right Tile from `blue.png`.
 fn red_and_blue(fixture: &Fixture) -> Mosaic {
@@ -42,6 +44,81 @@ fn a_source_image_takes_the_credit_of_its_row_in_the_credits_file() {
     assert_eq!(credit.collection(), Some("The Met"));
     assert_eq!(credit.link(), Some("https://example.org/red"));
     assert!(blue(&mosaic).credit().is_none());
+}
+
+#[test]
+fn the_credits_file_is_not_considered_as_a_source_image() {
+    let fixture = Fixture::new();
+    fixture.add_file("credits.csv", b"path,title\nred.png,Red Fuji\n");
+    fixture.add_source_image("red.png", &solid(8, 8, RED));
+    let target_image = fixture.set_target_image(&solid(10, 10, RED));
+
+    let built = fixture.build_reporting(&target_image, 1);
+
+    assert_eq!(built.report.warnings, []);
+    assert_eq!(built.report.stats.source_images, 1);
+}
+
+#[test]
+fn a_picture_stored_at_several_paths_takes_the_credit_of_its_first_credited_path() {
+    let fixture = Fixture::new();
+    fixture.add_file(
+        "credits.csv",
+        b"path,title\nc/red.png,Third copy\nb/red.png,Second copy\n",
+    );
+    for path in ["a/red.png", "b/red.png", "c/red.png"] {
+        fixture.add_source_image(path, &solid(8, 8, RED));
+    }
+    let target_image = fixture.set_target_image(&solid(10, 10, RED));
+
+    let mosaic = fixture.build(&target_image, 1);
+
+    let source_image = red(&mosaic);
+    assert_eq!(source_image.last_known_path(), Path::new("a/red.png"));
+    assert_eq!(source_image.credit().unwrap().title(), Some("Second copy"));
+}
+
+#[test]
+fn credits_never_change_which_source_image_fills_which_tile() {
+    let fixture = Fixture::new();
+    let settings = BuildSettings {
+        tiles_across: 3,
+        repeat_radius: 0,
+        seed: 7,
+    };
+    let without_credits = striped_mosaic_with(&fixture, &settings);
+    fixture.add_file(
+        "credits.csv",
+        b"path,artist,title\nred.png,Someone,Red\ncolors/blue.png,Someone else,Blue\n",
+    );
+    let target_image = fixture.path("target.png");
+
+    let with_credits = fixture.build_with_settings(&target_image, &settings);
+
+    assert!(
+        without_credits
+            .source_image_at(Tile { column: 0, row: 0 })
+            .is_some_and(|source_image| source_image.credit().is_none())
+    );
+    assert_eq!(with_credits.report.warnings, []);
+    assert_eq!(mapping(&with_credits.mosaic), mapping(&without_credits));
+    assert_eq!(with_credits.mosaic.rendered(), without_credits.rendered());
+    assert!(tiles(&with_credits.mosaic).iter().any(|&tile| {
+        with_credits
+            .mosaic
+            .source_image_at(tile)
+            .unwrap()
+            .credit()
+            .is_some()
+    }));
+}
+
+/// The identity of the Source Image filling each Tile, row by row.
+fn mapping(mosaic: &Mosaic) -> Vec<SourceImageId> {
+    tiles(mosaic)
+        .into_iter()
+        .map(|tile| mosaic.source_image_at(tile).unwrap().id())
+        .collect()
 }
 
 #[test]
