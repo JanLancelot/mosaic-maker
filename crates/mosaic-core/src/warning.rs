@@ -48,6 +48,9 @@ pub enum BuildWarning {
         credits_file: PathBuf,
         paths: Vec<String>,
     },
+    /// The Credits File at `credits_file` lists `path`, as written there, in more than one
+    /// row. The first of them gives its Credit.
+    DuplicateCreditsPath { credits_file: PathBuf, path: String },
 }
 
 impl fmt::Display for BuildWarning {
@@ -80,6 +83,11 @@ impl fmt::Display for BuildWarning {
                 "the Credits File {} names files that aren't in the Source Library: {}",
                 credits_file.display(),
                 paths.join(", ")
+            ),
+            BuildWarning::DuplicateCreditsPath { credits_file, path } => write!(
+                f,
+                "the Credits File {} lists {path} more than once; its first row is used",
+                credits_file.display()
             ),
         }
     }

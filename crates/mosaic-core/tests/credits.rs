@@ -317,6 +317,41 @@ fn rows_naming_no_file_in_the_source_library_are_listed_in_one_warning() {
 }
 
 #[test]
+fn a_path_listed_more_than_once_is_warned_about_once_and_its_first_row_is_used() {
+    let fixture = Fixture::new();
+    fixture.add_file(
+        "credits.csv",
+        b"path,title\n\
+          blue.png,\n\
+          red.png,Red Fuji\n\
+          red.png,Second row\n\
+          blue.png,Blue Wave\n\
+          red.png,Third row\n",
+    );
+
+    let built = build_red_and_blue(&fixture);
+
+    assert_eq!(
+        built.report.warnings,
+        [
+            BuildWarning::DuplicateCreditsPath {
+                credits_file: credits_file(&fixture),
+                path: "red.png".to_owned(),
+            },
+            BuildWarning::DuplicateCreditsPath {
+                credits_file: credits_file(&fixture),
+                path: "blue.png".to_owned(),
+            },
+        ]
+    );
+    assert_eq!(
+        red(&built.mosaic).credit().unwrap().title(),
+        Some("Red Fuji")
+    );
+    assert!(blue(&built.mosaic).credit().is_none());
+}
+
+#[test]
 fn no_credits_file_gives_no_warning() {
     let fixture = Fixture::new();
 

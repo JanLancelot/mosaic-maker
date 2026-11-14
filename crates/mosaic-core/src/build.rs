@@ -285,7 +285,7 @@ struct SourceLibrary {
 /// come in path order, so builds are repeatable however the parallel work interleaves.
 /// Byte-identical files are one Source Image, last seen at the first path and credited by
 /// the first path with a Credit. Files that can't be Source Images are skipped with a
-/// warning; the Credits File is not considered as one.
+/// warning; the Credits File is not considered as one, and its problems are warnings too.
 fn analyse_source_library(
     source_library: &Path,
     cache: &AnalysisCache,

@@ -88,23 +88,37 @@ pub(crate) struct Credits {
 
 impl Credits {
     /// Reads the Credits File at `path`. A missing file gives no Credits. One that can't be
-    /// read or parsed gives none either, with a warning.
+    /// read or parsed gives none either, with a warning. A path listed in more than one row
+    /// takes its first row's Credit, with a warning.
     pub(crate) fn read(path: &Path, warnings: &mut Vec<BuildWarning>) -> Self {
         let parsed = match std::fs::read(path) {
             Ok(contents) => Self::parse(&contents),
             Err(error) if error.kind() == io::ErrorKind::NotFound => return Self::default(),
             Err(error) => Err(CreditsFileError::Unreadable(error.to_string())),
         };
-        parsed.unwrap_or_else(|reason| {
-            warnings.push(BuildWarning::UnreadableCreditsFile {
-                credits_file: path.to_owned(),
-                reason,
-            });
-            Self::default()
-        })
+        match parsed {
+            Ok((credits, duplicated_paths)) => {
+                warnings.extend(duplicated_paths.into_iter().map(|duplicated| {
+                    BuildWarning::DuplicateCreditsPath {
+                        credits_file: path.to_owned(),
+                        path: duplicated,
+                    }
+                }));
+                credits
+            }
+            Err(reason) => {
+                warnings.push(BuildWarning::UnreadableCreditsFile {
+                    credits_file: path.to_owned(),
+                    reason,
+                });
+                Self::default()
+            }
+        }
     }
 
-    fn parse(contents: &[u8]) -> Result<Self, CreditsFileError> {
+    /// The Credits in `contents`, and each path listed in more than one row, in the order
+    /// they are first repeated.
+    fn parse(contents: &[u8]) -> Result<(Self, Vec<String>), CreditsFileError> {
         let unparseable = |error: csv::Error| CreditsFileError::Unparseable(error.to_string());
         let mut reader = csv::ReaderBuilder::new()
             .trim(csv::Trim::All)
@@ -118,6 +132,7 @@ impl Credits {
 
         let mut by_path = HashMap::new();
         let mut paths = Vec::new();
+        let mut duplicated_paths: Vec<String> = Vec::new();
         for record in reader.records() {
             let record = record.map_err(unparseable)?;
             let field = |column: Option<usize>| {
@@ -136,12 +151,19 @@ impl Credits {
                 field(collection),
                 field(link),
             );
-            if let Entry::Vacant(entry) = by_path.entry(path) {
-                paths.push(entry.key().clone());
-                entry.insert(credit);
+            match by_path.entry(path) {
+                Entry::Vacant(entry) => {
+                    paths.push(entry.key().clone());
+                    entry.insert(credit);
+                }
+                Entry::Occupied(entry) => {
+                    if !duplicated_paths.contains(entry.key()) {
+                        duplicated_paths.push(entry.key().clone());
+                    }
+                }
             }
         }
-        Ok(Self { by_path, paths })
+        Ok((Self { by_path, paths }, duplicated_paths))
     }
 
     /// The Credit given for `relative_path`, if any.
