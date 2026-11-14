@@ -13,7 +13,7 @@ use crate::credit::{self, CREDITS_FILE_NAME, Credit, Credits};
 use crate::warning::{BuildWarning, CreditsFileOf};
 
 /// What a build reads from its Source Library.
-pub(crate) struct SourceLibrary {
+pub(crate) struct SourceLibraryContents {
     /// Every file that may hold a Source Image, relative to the Source Library, in path order.
     pub(crate) files: Vec<PathBuf>,
     pub(crate) credits: LibraryCredits,
@@ -47,7 +47,10 @@ impl LibraryCredits {
 /// Source Library's naming no file in it (except the Target Image's own when the two share the
 /// file), and paths listed more than once (only the Target Image's own in a Credits File that
 /// credits only it, since its other rows are ignored).
-pub(crate) fn read(source_library: &Path, target_image: &Path) -> std::io::Result<SourceLibrary> {
+pub(crate) fn read(
+    source_library: &Path,
+    target_image: &Path,
+) -> std::io::Result<SourceLibraryContents> {
     let mut warnings = Vec::new();
     let scanned = scan::files_in(source_library, &mut warnings)?;
 
@@ -120,7 +123,7 @@ pub(crate) fn read(source_library: &Path, target_image: &Path) -> std::io::Resul
         })
         .cloned();
 
-    Ok(SourceLibrary {
+    Ok(SourceLibraryContents {
         files,
         credits: LibraryCredits {
             source_images,

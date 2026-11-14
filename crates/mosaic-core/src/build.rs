@@ -12,7 +12,7 @@ use crate::cache::AnalysisCache;
 use crate::cancel::CancelToken;
 use crate::color_signature::ColorSignature;
 use crate::mosaic::{Mosaic, RENDERED_TILE_SIZE, SourceImage, SourceImageId, TargetImage, Tile};
-use crate::source_library::{self, SourceLibrary};
+use crate::source_library::{self, SourceLibraryContents};
 use crate::warning::{BuildReport, BuildStats, BuildWarning};
 
 /// The Repeat Radius a new build starts with.
@@ -150,7 +150,7 @@ pub fn build(
     let grid = Grid::over(&target, settings.tiles_across)?;
 
     let cache = &cache.kept_out_of(source_library);
-    let SourceLibrary {
+    let SourceLibraryContents {
         files,
         credits,
         mut warnings,
