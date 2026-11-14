@@ -351,3 +351,34 @@ fn no_credits_file_gives_no_warning() {
 
     assert_eq!(built.report.warnings, []);
 }
+
+#[test]
+fn the_report_tells_the_credits_file_problems_apart_from_skipped_files() {
+    let fixture = Fixture::new();
+    fixture.add_file("notes.txt", b"not a picture");
+    fixture.add_file(
+        "credits.csv",
+        b"path,title\nred.png,Red Fuji\nred.png,Again\ngone.png,Gone\n",
+    );
+
+    let report = build_red_and_blue(&fixture).report;
+
+    let problems: Vec<_> = report.credits_file_problems().collect();
+    assert_eq!(
+        problems,
+        [
+            &BuildWarning::DuplicateCreditsPath {
+                credits_file: CreditsFileOf::SourceLibrary,
+                path: "red.png".to_owned(),
+            },
+            &BuildWarning::UnknownCreditsPaths {
+                paths: vec!["gone.png".to_owned()],
+            },
+        ]
+    );
+    let skipped: Vec<_> = report.skipped_files().collect();
+    assert!(
+        matches!(skipped[..], [BuildWarning::SkippedFile { path, .. }] if path == Path::new("notes.txt")),
+        "{skipped:?}"
+    );
+}

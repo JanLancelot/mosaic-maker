@@ -18,6 +18,18 @@ impl BuildReport {
             .filter(|warning| matches!(warning, BuildWarning::SkippedFile { .. }))
     }
 
+    /// What was wrong with the Credits Files the build read.
+    pub fn credits_file_problems(&self) -> impl Iterator<Item = &BuildWarning> {
+        self.warnings.iter().filter(|warning| {
+            matches!(
+                warning,
+                BuildWarning::UnreadableCreditsFile { .. }
+                    | BuildWarning::UnknownCreditsPaths { .. }
+                    | BuildWarning::DuplicateCreditsPath { .. }
+            )
+        })
+    }
+
     /// How many Tiles were filled with a smaller Repeat Radius than asked for.
     pub fn relaxed_tile_count(&self) -> usize {
         self.warnings

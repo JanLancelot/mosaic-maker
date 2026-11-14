@@ -139,6 +139,25 @@ fn a_pinned_tile_shows_its_source_images_credit() {
     save_screenshot(&mut harness, "tile-pinned-credit.png");
 }
 
+#[test]
+fn the_credits_files_problems_are_shown_with_the_build_report() {
+    let fixture = Fixture::new();
+    std::fs::write(
+        fixture.source_library().join("credits.csv"),
+        "path,title\nblue.png,Blue\nmissing.png,Gone\n",
+    )
+    .unwrap();
+    let mut harness = fixture.built_app();
+
+    harness
+        .get_by_label("1 Credits File problem")
+        .click_accesskit();
+    harness.run();
+
+    harness.get_by_label_contains("aren't in the Source Library: missing.png");
+    save_screenshot(&mut harness, "credits-file-problems.png");
+}
+
 fn save_screenshot(harness: &mut Harness<'_, MosaicMakerApp>, file_name: &str) {
     let screenshot = harness.render().expect("the window renders");
     std::fs::create_dir_all(screenshots_folder()).unwrap();

@@ -793,6 +793,24 @@ fn show_build_report(ui: &mut egui::Ui, report: &BuildReport) {
         });
     }
 
+    let credits_file_problems: Vec<_> = report.credits_file_problems().collect();
+    let heading = match credits_file_problems.len() {
+        0 => None,
+        1 => Some("1 Credits File problem".to_owned()),
+        count => Some(format!("{count} Credits File problems")),
+    };
+    if let Some(heading) = heading {
+        ui.collapsing(heading, |ui| {
+            egui::ScrollArea::vertical()
+                .max_height(200.0)
+                .show(ui, |ui| {
+                    for warning in credits_file_problems {
+                        ui.label(warning.to_string());
+                    }
+                });
+        });
+    }
+
     let relaxed = report.relaxed_tile_count();
     if relaxed > 0 {
         ui.label(format!(
