@@ -92,10 +92,9 @@ impl Mosaic {
     }
 }
 
-/// The Credit's title, or its link as written in place of a missing one, linked by its web
-/// link if it has one. `None` if it has neither.
+/// The Credit's shown title, linked by its web link if it has one. `None` if it has none.
 fn title(credit: &Credit, italic: bool) -> Option<String> {
-    let text = text(credit.title().or(credit.link())?);
+    let text = text(credit.shown_title()?);
     let text = if italic { format!("*{text}*") } else { text };
     Some(match credit.web_link() {
         Some(link) => format!("[{text}]({})", destination(link)),

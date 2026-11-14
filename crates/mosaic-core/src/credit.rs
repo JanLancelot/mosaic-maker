@@ -53,6 +53,12 @@ impl Credit {
         self.title.as_deref()
     }
 
+    /// What to show as the title: the title, or the link as written in place of a missing
+    /// one. `None` if it has neither.
+    pub fn shown_title(&self) -> Option<&str> {
+        self.title().or(self.link())
+    }
+
     pub fn date(&self) -> Option<&str> {
         self.date.as_deref()
     }

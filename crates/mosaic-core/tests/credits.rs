@@ -180,6 +180,30 @@ fn only_http_and_https_links_are_offered_as_web_links() {
 }
 
 #[test]
+fn a_credit_shows_its_title_or_in_place_of_a_missing_one_its_link_as_written() {
+    let fixture = Fixture::new();
+    fixture.add_file(
+        "credits.csv",
+        b"path,artist,title,link\n\
+          red.png,Someone,Red Fuji,https://example.org/red\n\
+          blue.png,Someone else,,pages/blue.html\n",
+    );
+    add_target_image_credits_file(&fixture, b"path,artist\ntarget.png,Katsushika Hokusai\n");
+
+    let mosaic = red_and_blue(&fixture);
+
+    assert_eq!(
+        red(&mosaic).credit().unwrap().shown_title(),
+        Some("Red Fuji")
+    );
+    assert_eq!(
+        blue(&mosaic).credit().unwrap().shown_title(),
+        Some("pages/blue.html")
+    );
+    assert_eq!(mosaic.target_image_credit().unwrap().shown_title(), None);
+}
+
+#[test]
 fn a_row_with_every_field_blank_gives_no_credit() {
     let fixture = Fixture::new();
     fixture.add_file(

@@ -625,10 +625,10 @@ impl ShownMosaic {
     }
 }
 
-/// The title of `credit`, linked to its web link if it has one, then each other field that is
-/// known on its own line. With a link but no title, the link stands in for the title.
+/// The shown title of `credit`, linked to its web link if it has one, then each other field
+/// that is known on its own line.
 fn show_credit(ui: &mut egui::Ui, credit: &Credit) {
-    if let Some(title) = credit.title().or(credit.link()) {
+    if let Some(title) = credit.shown_title() {
         // Strong text has its own color, which would hide a link's, so only a plain title is strong.
         match credit.web_link() {
             Some(web_link) => ui.hyperlink_to(title, web_link),
