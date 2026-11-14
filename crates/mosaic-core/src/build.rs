@@ -11,10 +11,10 @@ use crate::assign::{self, Assignment};
 use crate::cache::AnalysisCache;
 use crate::cancel::CancelToken;
 use crate::color_signature::ColorSignature;
-use crate::credit::{CREDITS_FILE_NAME, Credit, Credits};
+use crate::credits_files::CreditsFiles;
 use crate::mosaic::{Mosaic, RENDERED_TILE_SIZE, SourceImage, SourceImageId, Tile};
 use crate::scan;
-use crate::warning::{BuildReport, BuildStats, BuildWarning, CreditsFileOf};
+use crate::warning::{BuildReport, BuildStats, BuildWarning};
 
 /// The Repeat Radius a new build starts with.
 pub const DEFAULT_REPEAT_RADIUS: u32 = 3;
@@ -152,54 +152,18 @@ pub fn build(
 
     let cache = &cache.kept_out_of(source_library);
     let mut warnings = Vec::new();
-    let target_image_name = target_image.file_name().map(Path::new);
-    let target_image_folder = folder_within(folder_of(target_image), source_library);
-    let shares_credits_file = target_image_folder.as_deref() == Some(Path::new(""));
-    // In a subfolder of the Source Library, the Target Image's Credits File is in its scan.
-    let target_image_credits_file = target_image_folder
-        .filter(|_| !shares_credits_file)
-        .map(|folder| folder.join(CREDITS_FILE_NAME));
+    let mut files =
+        scan::files_in(source_library, &mut warnings).map_err(BuildError::SourceLibrary)?;
+    let credits_files = CreditsFiles::read(target_image, source_library, &mut files, &mut warnings);
     let AnalysedLibrary {
         analysed,
-        credits,
-        credits_by_path,
-    } = analyse_source_library(
-        source_library,
-        target_image_name.filter(|_| shares_credits_file),
-        target_image_credits_file.as_deref(),
-        cache,
-        &mut warnings,
-        &mut reporter,
-    )?;
+        identified_paths,
+    } = analyse_source_library(source_library, files, cache, &mut warnings, &mut reporter)?;
     if analysed.is_empty() {
         return Err(BuildError::EmptySourceLibrary);
     }
-    // Read only now, so a Credits File the Target Image shares isn't read, or warned about,
-    // twice.
-    let target_image_credits = if shares_credits_file {
-        credits_by_path
-    } else {
-        let credits = Credits::read(
-            &folder_of(target_image).join(CREDITS_FILE_NAME),
-            CreditsFileOf::TargetImage,
-            &mut warnings,
-        );
-        // Its rows for other files are ignored, so only the Target Image's own can be repeated.
-        warnings.extend(
-            credits
-                .repeated_paths()
-                .iter()
-                .filter(|path| Some(Path::new(path)) == target_image_name)
-                .map(|path| BuildWarning::DuplicateCreditsPath {
-                    credits_file: CreditsFileOf::TargetImage,
-                    path: path.clone(),
-                }),
-        );
-        credits
-    };
-    let target_image_credit = target_image_name
-        .and_then(|name| target_image_credits.of(name))
-        .cloned();
+    let credits = credits_files.source_image_credits(&identified_paths);
+    let target_image_credit = credits_files.target_image_credit().cloned();
 
     let tile_count = grid.tile_count();
     reporter.report(Stage::MatchingTiles, 0, tile_count)?;
@@ -316,81 +280,26 @@ fn open_image(path: &Path) -> Result<RgbImage, image::ImageError> {
     ))
 }
 
-/// The folder holding the file at `path`.
-fn folder_of(path: &Path) -> &Path {
-    match path.parent() {
-        Some(folder) if !folder.as_os_str().is_empty() => folder,
-        _ => Path::new("."),
-    }
-}
-
-/// Where `folder` is within `source_library`, however each is written: empty for its root, and
-/// `None` if it is outside it.
-fn folder_within(folder: &Path, source_library: &Path) -> Option<PathBuf> {
-    let folder = std::fs::canonicalize(folder).ok()?;
-    let source_library = std::fs::canonicalize(source_library).ok()?;
-    folder
-        .strip_prefix(source_library)
-        .ok()
-        .map(Path::to_path_buf)
-}
-
 /// What a build finds in its Source Library.
 struct AnalysedLibrary {
     /// Every Source Image, in path order.
     analysed: Vec<AnalysedSourceImage>,
-    /// The Credit of each Source Image that has one.
-    credits: HashMap<SourceImageId, Credit>,
-    /// The Credits read from the Credits File at its root, by path.
-    credits_by_path: Credits,
+    /// Every path holding a Source Image, in path order, with its identity.
+    identified_paths: Vec<(PathBuf, SourceImageId)>,
 }
 
-/// Analyses every decodable image in `source_library` and its subfolders, reusing what
-/// `cache` holds, and gives each the Credit its Credits File holds for it. Source Images
-/// come in path order, so builds are repeatable however the parallel work interleaves.
-/// Byte-identical files are one Source Image, last seen at the first path and credited by
-/// the first path with a Credit. Files that can't be Source Images are skipped with a
-/// warning; the Credits File is not considered as one, nor is `target_image_credits_file`,
-/// the Target Image's when it sits in a subfolder, and its problems are warnings too.
-/// Its row for `target_image_name`, the Target Image's file name when it sits at the root
-/// and shares the Credits File, isn't reported as naming a file missing from the library.
+/// Analyses every decodable image among `files`, the files in `source_library` and its
+/// subfolders in path order, reusing what `cache` holds. Source Images come in path order, so
+/// builds are repeatable however the parallel work interleaves. Byte-identical files are one
+/// Source Image, last seen at the first path. Files that can't be Source Images are skipped
+/// with a warning.
 fn analyse_source_library(
     source_library: &Path,
-    target_image_name: Option<&Path>,
-    target_image_credits_file: Option<&Path>,
+    files: Vec<PathBuf>,
     cache: &AnalysisCache,
     warnings: &mut Vec<BuildWarning>,
     reporter: &mut Reporter<'_, impl FnMut(Progress)>,
 ) -> Result<AnalysedLibrary, BuildError> {
-    let mut files = scan::files_in(source_library, warnings).map_err(BuildError::SourceLibrary)?;
-    let credits_file = files
-        .iter()
-        .position(|path| path == Path::new(CREDITS_FILE_NAME))
-        .map(|index| files.remove(index));
-    files.retain(|path| Some(path.as_path()) != target_image_credits_file);
-    let credits_by_path = match credits_file {
-        Some(path) => {
-            let credits = Credits::read(
-                &source_library.join(path),
-                CreditsFileOf::SourceLibrary,
-                warnings,
-            );
-            warnings.extend(credits.repeated_paths().iter().map(|path| {
-                BuildWarning::DuplicateCreditsPath {
-                    credits_file: CreditsFileOf::SourceLibrary,
-                    path: path.clone(),
-                }
-            }));
-            let mut paths = credits.paths_naming_none_of(&files);
-            paths.retain(|path| Some(Path::new(path)) != target_image_name);
-            if !paths.is_empty() {
-                warnings.push(BuildWarning::UnknownCreditsPaths { paths });
-            }
-            credits
-        }
-        None => Credits::default(),
-    };
-
     let total = files.len();
     let outcomes = in_parallel(
         &files,
@@ -400,16 +309,12 @@ fn analyse_source_library(
     )?;
 
     let mut analysed: Vec<AnalysedSourceImage> = Vec::with_capacity(total);
+    let mut identified_paths = Vec::with_capacity(total);
     let mut seen = HashSet::new();
-    let mut credits = HashMap::new();
     for (relative_path, outcome) in files.into_iter().zip(outcomes) {
         match outcome {
             Ok(source_image) => {
-                if let Some(credit) = credits_by_path.of(&relative_path) {
-                    credits
-                        .entry(source_image.id)
-                        .or_insert_with(|| credit.clone());
-                }
+                identified_paths.push((relative_path, source_image.id));
                 if seen.insert(source_image.id) {
                     analysed.push(source_image);
                 }
@@ -422,8 +327,7 @@ fn analyse_source_library(
     }
     Ok(AnalysedLibrary {
         analysed,
-        credits,
-        credits_by_path,
+        identified_paths,
     })
 }
 
