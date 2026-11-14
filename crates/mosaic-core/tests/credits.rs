@@ -4,13 +4,14 @@
 mod common;
 
 use common::{BLUE, Fixture, RED, solid};
-use mosaic_core::{Mosaic, SourceImage, Tile};
+use image::{Rgb, RgbImage};
+use mosaic_core::{BuildSettings, Mosaic, SourceImage, Tile};
 
 /// A 2 × 1 Mosaic whose left Tile is filled from `red.png` and right Tile from `blue.png`.
 fn red_and_blue(fixture: &Fixture) -> Mosaic {
     fixture.add_source_image("red.png", &solid(8, 8, RED));
     fixture.add_source_image("blue.png", &solid(8, 8, BLUE));
-    let target = image::RgbImage::from_fn(20, 10, |x, _| if x < 10 { RED } else { BLUE });
+    let target = RgbImage::from_fn(20, 10, |x, _| if x < 10 { RED } else { BLUE });
     let target_image = fixture.set_target_image(&target);
     fixture.build(&target_image, 2)
 }
@@ -41,6 +42,56 @@ fn a_source_image_takes_the_credit_of_its_row_in_the_credits_file() {
     assert_eq!(credit.collection(), Some("The Met"));
     assert_eq!(credit.link(), Some("https://example.org/red"));
     assert!(blue(&mosaic).credit().is_none());
+}
+
+#[test]
+fn only_http_and_https_links_are_offered_as_web_links() {
+    let links = [
+        (
+            "https://example.org/a?b=c",
+            Some("https://example.org/a?b=c"),
+        ),
+        ("http://example.org", Some("http://example.org")),
+        ("HTTPS://EXAMPLE.ORG/x", Some("HTTPS://EXAMPLE.ORG/x")),
+        ("file:///etc/passwd", None),
+        ("javascript:alert(1)", None),
+        ("example.org/artwork", None),
+        ("/artworks/1", None),
+        ("https://", None),
+        ("http//example.org", None),
+        ("mailto:someone@example.org", None),
+    ];
+    let fixture = Fixture::new();
+    let mut csv = String::from("path,link\n");
+    let mut colors = Vec::new();
+    for (index, (link, _)) in links.iter().enumerate() {
+        let color = Rgb([index as u8 * 25, 0, 0]);
+        fixture.add_source_image(&format!("{index}.png"), &solid(8, 8, color));
+        csv.push_str(&format!("{index}.png,{link}\n"));
+        colors.push(color);
+    }
+    fixture.add_file("credits.csv", csv.as_bytes());
+    let target = RgbImage::from_fn(10 * links.len() as u32, 10, |x, _| {
+        colors[(x / 10) as usize]
+    });
+    let target_image = fixture.set_target_image(&target);
+    let settings = BuildSettings {
+        tiles_across: links.len() as u32,
+        repeat_radius: 0,
+        seed: 0,
+    };
+
+    let mosaic = fixture.build_with_settings(&target_image, &settings).mosaic;
+
+    for (column, (link, web_link)) in links.into_iter().enumerate() {
+        let tile = Tile {
+            column: column as u32,
+            row: 0,
+        };
+        let credit = mosaic.source_image_at(tile).unwrap().credit().unwrap();
+        assert_eq!(credit.link(), Some(link));
+        assert_eq!(credit.web_link(), web_link, "web link of {link}");
+    }
 }
 
 #[test]

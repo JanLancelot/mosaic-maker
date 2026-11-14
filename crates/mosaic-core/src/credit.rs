@@ -57,9 +57,19 @@ impl Credit {
         self.collection.as_deref()
     }
 
-    /// The link as written, whatever it points to.
+    /// The link as written, whatever it points to. See [`Self::web_link`] for one that is
+    /// safe to open.
     pub fn link(&self) -> Option<&str> {
         self.link.as_deref()
+    }
+
+    /// The link, as written, if it is a well-formed `http` or `https` URL: the only links
+    /// the app opens, so a Credits File can't make it open a file or run a script.
+    pub fn web_link(&self) -> Option<&str> {
+        let link = self.link.as_deref()?;
+        let url = url::Url::parse(link).ok()?;
+        let is_web = matches!(url.scheme(), "http" | "https") && url.has_host();
+        is_web.then_some(link)
     }
 }
 
