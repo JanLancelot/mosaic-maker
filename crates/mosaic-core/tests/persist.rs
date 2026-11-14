@@ -72,6 +72,37 @@ fn a_saved_mosaic_opens_and_is_inspectable_after_its_source_library_is_deleted()
     );
 }
 
+/// A 3 × 2 Mosaic File saved by Mosaic Maker v0.1.0 (format version 1), built like
+/// `striped_mosaic` with Seed 7 from a Source Library at `/tmp/mosaic-v1-fixture/library`.
+const VERSION_1_MOSAIC_FILE: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/tests/fixtures/striped-v1.mosaic"
+);
+
+#[test]
+fn a_mosaic_file_saved_by_v0_1_0_opens_with_no_credits() {
+    let opened = Mosaic::open(Path::new(VERSION_1_MOSAIC_FILE)).unwrap();
+
+    assert_eq!(*opened.settings(), SETTINGS);
+    assert_eq!((opened.tiles_across(), opened.rows()), (3, 2));
+    let source_images: Vec<_> = tiles(&opened)
+        .into_iter()
+        .map(|tile| opened.source_image_at(tile).unwrap())
+        .collect();
+    let file_names: Vec<_> = source_images
+        .iter()
+        .map(|source_image| source_image.file_name())
+        .collect();
+    let rows = [
+        ["red.png", "blue.png", "red.png"],
+        ["green.png", "red.png", "blue.png"],
+    ];
+    assert_eq!(file_names, rows.concat());
+    for source_image in source_images {
+        assert_eq!(source_image.credit(), None, "{}", source_image.file_name());
+    }
+}
+
 #[test]
 fn opening_a_file_that_isnt_a_mosaic_is_an_error() {
     let fixture = Fixture::new();
