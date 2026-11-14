@@ -455,3 +455,26 @@ fn a_target_image_at_the_source_library_root_shares_its_credits_file_read_once()
         }]
     );
 }
+
+#[test]
+fn the_target_image_row_of_a_shared_credits_file_names_no_missing_source_image() {
+    let fixture = Fixture::new();
+    // Hidden, the Target Image isn't part of the Source Library it sits in.
+    fixture.add_file(
+        "credits.csv",
+        b"path,title\n.target.png,The Great Wave\ngone.png,Gone\n",
+    );
+
+    let built = build_red_and_blue_from_target_image_in_source_library(&fixture, ".target.png");
+
+    assert_eq!(
+        built.mosaic.target_image_credit().unwrap().title(),
+        Some("The Great Wave")
+    );
+    assert_eq!(
+        built.report.warnings,
+        [BuildWarning::UnknownCreditsPaths {
+            paths: vec!["gone.png".to_owned()],
+        }]
+    );
+}

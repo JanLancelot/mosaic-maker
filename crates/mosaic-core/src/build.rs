@@ -152,16 +152,36 @@ pub fn build(
 
     let cache = &cache.kept_out_of(source_library);
     let mut warnings = Vec::new();
+    let target_image_name = target_image.file_name().map(Path::new);
+    let shares_credits_file = same_folder(folder_of(target_image), source_library);
     let SourceLibrary {
         analysed,
         credits,
         credits_file,
-    } = analyse_source_library(source_library, cache, &mut warnings, &mut reporter)?;
+    } = analyse_source_library(
+        source_library,
+        target_image_name.filter(|_| shares_credits_file),
+        cache,
+        &mut warnings,
+        &mut reporter,
+    )?;
     if analysed.is_empty() {
         return Err(BuildError::EmptySourceLibrary);
     }
-    let target_image_credit =
-        target_image_credit(target_image, source_library, credits_file, &mut warnings);
+    // Read only now, so a Credits File the Target Image shares isn't read, or warned about,
+    // twice.
+    let target_image_credits = if shares_credits_file {
+        credits_file
+    } else {
+        Credits::read(
+            &folder_of(target_image).join(CREDITS_FILE_NAME),
+            CreditsFileOf::TargetImage,
+            &mut warnings,
+        )
+    };
+    let target_image_credit = target_image_name
+        .and_then(|name| target_image_credits.of(name))
+        .cloned();
 
     let tile_count = grid.tile_count();
     reporter.report(Stage::MatchingTiles, 0, tile_count)?;
@@ -278,28 +298,6 @@ fn open_image(path: &Path) -> Result<RgbImage, image::ImageError> {
     ))
 }
 
-/// The Credit that the Credits File in the Target Image's folder gives for its file name.
-/// When that folder is the Source Library's root, its Credits File is the one already read
-/// as `source_library_credits`, so it isn't read, or warned about, twice.
-fn target_image_credit(
-    target_image: &Path,
-    source_library: &Path,
-    source_library_credits: Credits,
-    warnings: &mut Vec<BuildWarning>,
-) -> Option<Credit> {
-    let folder = folder_of(target_image);
-    let credits = if same_folder(folder, source_library) {
-        source_library_credits
-    } else {
-        Credits::read(
-            &folder.join(CREDITS_FILE_NAME),
-            CreditsFileOf::TargetImage,
-            warnings,
-        )
-    };
-    credits.of(Path::new(target_image.file_name()?)).cloned()
-}
-
 /// The folder holding the file at `path`.
 fn folder_of(path: &Path) -> &Path {
     match path.parent() {
@@ -332,8 +330,11 @@ struct SourceLibrary {
 /// Byte-identical files are one Source Image, last seen at the first path and credited by
 /// the first path with a Credit. Files that can't be Source Images are skipped with a
 /// warning; the Credits File is not considered as one, and its problems are warnings too.
+/// Its row for `target_image_name`, the Target Image's file name when it sits at the root
+/// and shares the Credits File, isn't reported as naming a file missing from the library.
 fn analyse_source_library(
     source_library: &Path,
+    target_image_name: Option<&Path>,
     cache: &AnalysisCache,
     warnings: &mut Vec<BuildWarning>,
     reporter: &mut Reporter<'_, impl FnMut(Progress)>,
@@ -350,7 +351,8 @@ fn analyse_source_library(
                 CreditsFileOf::SourceLibrary,
                 warnings,
             );
-            let paths = credits.paths_naming_none_of(&files);
+            let mut paths = credits.paths_naming_none_of(&files);
+            paths.retain(|path| Some(Path::new(path)) != target_image_name);
             if !paths.is_empty() {
                 warnings.push(BuildWarning::UnknownCreditsPaths { paths });
             }
