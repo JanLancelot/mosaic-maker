@@ -412,3 +412,46 @@ fn the_target_image_takes_the_credit_of_its_row_in_the_credits_file_beside_it() 
     assert_eq!(built.report.warnings, []);
     assert!(red(&built.mosaic).credit().is_none());
 }
+
+/// Like `build_red_and_blue`, with the Target Image saved at `file_name` in the root of the
+/// Source Library.
+fn build_red_and_blue_from_target_image_in_source_library(
+    fixture: &Fixture,
+    file_name: &str,
+) -> Built {
+    fixture.add_source_image("red.png", &solid(8, 8, RED));
+    fixture.add_source_image("blue.png", &solid(8, 8, BLUE));
+    let target = RgbImage::from_fn(20, 10, |x, _| if x < 10 { RED } else { BLUE });
+    fixture.add_source_image(file_name, &target);
+    fixture.build_reporting(&fixture.source_library().join(file_name), 2)
+}
+
+#[test]
+fn a_target_image_at_the_source_library_root_shares_its_credits_file_read_once() {
+    let fixture = Fixture::new();
+    fixture.add_file(
+        "credits.csv",
+        b"path,title\n\
+          red.png,Red Fuji\n\
+          target.png,The Great Wave\n\
+          red.png,Second row\n",
+    );
+
+    let built = build_red_and_blue_from_target_image_in_source_library(&fixture, "target.png");
+
+    assert_eq!(
+        built.mosaic.target_image_credit().unwrap().title(),
+        Some("The Great Wave")
+    );
+    assert_eq!(
+        red(&built.mosaic).credit().unwrap().title(),
+        Some("Red Fuji")
+    );
+    assert_eq!(
+        built.report.warnings,
+        [BuildWarning::DuplicateCreditsPath {
+            credits_file: CreditsFileOf::SourceLibrary,
+            path: "red.png".to_owned(),
+        }]
+    );
+}

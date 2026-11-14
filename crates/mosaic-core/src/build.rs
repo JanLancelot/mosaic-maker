@@ -152,12 +152,16 @@ pub fn build(
 
     let cache = &cache.kept_out_of(source_library);
     let mut warnings = Vec::new();
-    let SourceLibrary { analysed, credits } =
-        analyse_source_library(source_library, cache, &mut warnings, &mut reporter)?;
+    let SourceLibrary {
+        analysed,
+        credits,
+        credits_file,
+    } = analyse_source_library(source_library, cache, &mut warnings, &mut reporter)?;
     if analysed.is_empty() {
         return Err(BuildError::EmptySourceLibrary);
     }
-    let target_image_credit = target_image_credit(target_image, &mut warnings);
+    let target_image_credit =
+        target_image_credit(target_image, source_library, credits_file, &mut warnings);
 
     let tile_count = grid.tile_count();
     reporter.report(Stage::MatchingTiles, 0, tile_count)?;
@@ -274,16 +278,42 @@ fn open_image(path: &Path) -> Result<RgbImage, image::ImageError> {
     ))
 }
 
-/// The Credit of `target_image` given by the Credits File in its folder, by its file name.
-fn target_image_credit(target_image: &Path, warnings: &mut Vec<BuildWarning>) -> Option<Credit> {
-    let file_name = target_image.file_name()?;
-    let folder = target_image.parent().unwrap_or(Path::new(""));
-    let credits = Credits::read(
-        &folder.join(CREDITS_FILE_NAME),
-        CreditsFileOf::TargetImage,
-        warnings,
-    );
-    credits.of(Path::new(file_name)).cloned()
+/// The Credit that the Credits File in the Target Image's folder gives for its file name.
+/// When that folder is the Source Library's root, its Credits File is the one already read
+/// as `source_library_credits`, so it isn't read, or warned about, twice.
+fn target_image_credit(
+    target_image: &Path,
+    source_library: &Path,
+    source_library_credits: Credits,
+    warnings: &mut Vec<BuildWarning>,
+) -> Option<Credit> {
+    let folder = folder_of(target_image);
+    let credits = if same_folder(folder, source_library) {
+        source_library_credits
+    } else {
+        Credits::read(
+            &folder.join(CREDITS_FILE_NAME),
+            CreditsFileOf::TargetImage,
+            warnings,
+        )
+    };
+    credits.of(Path::new(target_image.file_name()?)).cloned()
+}
+
+/// The folder holding the file at `path`.
+fn folder_of(path: &Path) -> &Path {
+    match path.parent() {
+        Some(folder) if !folder.as_os_str().is_empty() => folder,
+        _ => Path::new("."),
+    }
+}
+
+/// Whether `a` and `b` are the same folder, however each is written.
+fn same_folder(a: &Path, b: &Path) -> bool {
+    match (std::fs::canonicalize(a), std::fs::canonicalize(b)) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => false,
+    }
 }
 
 /// What a build finds in its Source Library.
@@ -292,6 +322,8 @@ struct SourceLibrary {
     analysed: Vec<AnalysedSourceImage>,
     /// The Credit of each Source Image that has one.
     credits: HashMap<SourceImageId, Credit>,
+    /// The Credits read from the Credits File at its root.
+    credits_file: Credits,
 }
 
 /// Analyses every decodable image in `source_library` and its subfolders, reusing what
@@ -356,7 +388,11 @@ fn analyse_source_library(
             }),
         }
     }
-    Ok(SourceLibrary { analysed, credits })
+    Ok(SourceLibrary {
+        analysed,
+        credits,
+        credits_file: credits_by_path,
+    })
 }
 
 /// Runs `work` on every one of `items` across all cores, returning the results in the same
