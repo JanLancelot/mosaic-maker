@@ -269,3 +269,30 @@ fn the_without_a_credit_section_is_left_out_when_every_source_image_has_a_credit
         "{list}"
     );
 }
+
+#[test]
+fn saving_the_credits_list_writes_it_to_a_file_replacing_any_there() {
+    let fixture = Fixture::new();
+    let mosaic = striped_mosaic(&fixture);
+    let path = fixture.path("stripes-credits.md");
+    std::fs::write(&path, "an older Credits List").unwrap();
+
+    mosaic.save_credits_list(&path).unwrap();
+
+    assert_eq!(
+        std::fs::read_to_string(&path).unwrap(),
+        mosaic.credits_list()
+    );
+}
+
+#[test]
+fn saving_the_credits_list_into_a_missing_folder_fails() {
+    let fixture = Fixture::new();
+    let mosaic = striped_mosaic(&fixture);
+
+    assert!(
+        mosaic
+            .save_credits_list(&fixture.path("missing folder/stripes-credits.md"))
+            .is_err()
+    );
+}

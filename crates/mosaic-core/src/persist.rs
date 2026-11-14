@@ -124,7 +124,7 @@ impl CreditEntry {
     }
 }
 
-/// Why a Mosaic couldn't be saved.
+/// Why a Mosaic, or its Credits List, couldn't be saved.
 #[derive(Debug, thiserror::Error)]
 #[error(transparent)]
 pub struct SaveError(#[from] io::Error);

@@ -295,7 +295,7 @@ impl Session {
         self.start(
             Operation::SaveCreditsList(path.clone()),
             None,
-            move |_, _| match std::fs::write(&path, mosaic.credits_list()) {
+            move |_, _| match mosaic.save_credits_list(&path) {
                 Ok(()) => Finished::NothingToShow(Outcome::SavedCreditsList(path)),
                 Err(error) => Finished::failed(error),
             },
