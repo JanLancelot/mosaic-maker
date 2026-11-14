@@ -41,6 +41,8 @@ pub enum Operation {
     Save(PathBuf),
     /// Exporting the shown Mosaic to a PNG at this path.
     Export(PathBuf),
+    /// Saving the shown Mosaic's Credits List to a Markdown file at this path.
+    SaveCreditsList(PathBuf),
 }
 
 /// How the latest operation ended.
@@ -51,6 +53,7 @@ pub enum Outcome {
     Saved(PathBuf),
     Opened(PathBuf),
     Exported(PathBuf, ExportReport),
+    SavedCreditsList(PathBuf),
     Cancelled,
     /// Failed for the reason given.
     Failed(Operation, String),
@@ -280,6 +283,20 @@ impl Session {
             None,
             move |_, _| match mosaic.export_png(&path, tile_size) {
                 Ok(report) => Finished::NothingToShow(Outcome::Exported(path, report)),
+                Err(error) => Finished::failed(error),
+            },
+        );
+        Ok(())
+    }
+
+    /// Saves the shown Mosaic's Credits List to a Markdown file at `path`.
+    pub fn save_credits_list(&mut self, path: PathBuf) -> Result<(), Refused> {
+        let mosaic = self.mosaic_to_write()?;
+        self.start(
+            Operation::SaveCreditsList(path.clone()),
+            None,
+            move |_, _| match std::fs::write(&path, mosaic.credits_list()) {
+                Ok(()) => Finished::NothingToShow(Outcome::SavedCreditsList(path)),
                 Err(error) => Finished::failed(error),
             },
         );

@@ -223,7 +223,7 @@ impl MosaicMakerApp {
                     .clicked()
                     && let Some(path) = rfd::FileDialog::new()
                         .add_filter("Mosaic", &["mosaic"])
-                        .set_file_name(self.suggested_file_name("mosaic"))
+                        .set_file_name(self.suggested_file_name(".mosaic"))
                         .save_file()
                 {
                     let _ = self.session.save(path);
@@ -234,6 +234,16 @@ impl MosaicMakerApp {
                     .clicked()
                 {
                     self.export_dialog_open = true;
+                }
+                if ui
+                    .add_enabled(saveable, egui::Button::new("Save Credits List…"))
+                    .clicked()
+                    && let Some(path) = rfd::FileDialog::new()
+                        .add_filter("Markdown", &["md"])
+                        .set_file_name(self.suggested_file_name("-credits.md"))
+                        .save_file()
+                {
+                    let _ = self.session.save_credits_list(path);
                 }
             });
         });
@@ -268,7 +278,7 @@ impl MosaicMakerApp {
         if export
             && let Some(path) = rfd::FileDialog::new()
                 .add_filter("PNG", &["png"])
-                .set_file_name(self.suggested_file_name("png"))
+                .set_file_name(self.suggested_file_name(".png"))
                 .save_file()
         {
             // Export PNG is only offered while the Session would accept it.
@@ -276,15 +286,15 @@ impl MosaicMakerApp {
         }
     }
 
-    /// A file name for saving or exporting the shown Mosaic: its Target Image's, with
-    /// `extension`.
-    fn suggested_file_name(&self, extension: &str) -> String {
+    /// A file name for saving or exporting the shown Mosaic: its Target Image's, ending in
+    /// `suffix` in place of its extension.
+    fn suggested_file_name(&self, suffix: &str) -> String {
         let stem = self
             .shown
             .as_ref()
             .and_then(|shown| shown.mosaic.target_image().file_stem())
             .map_or_else(|| "Mosaic".into(), |stem| stem.to_string_lossy());
-        format!("{stem}.{extension}")
+        format!("{stem}{suffix}")
     }
 
     fn setup_panel(&mut self, ui: &mut egui::Ui) {
@@ -406,12 +416,17 @@ fn status(outcome: &Outcome) -> Option<String> {
         Outcome::Saved(path) => format!("Saved to {}.", path.display()),
         Outcome::Opened(path) => format!("Opened {}.", path.display()),
         Outcome::Exported(path, _) => format!("Exported to {}.", path.display()),
+        Outcome::SavedCreditsList(path) => format!("Saved the Credits List to {}.", path.display()),
         Outcome::Cancelled => "Build cancelled.".to_owned(),
         Outcome::Failed(operation, reason) => match operation {
             Operation::Build => format!("Build failed: {reason}."),
             Operation::Open(path) => format!("Couldn't open {}: {reason}.", path.display()),
             Operation::Save(path) => format!("Couldn't save {}: {reason}.", path.display()),
             Operation::Export(path) => format!("Couldn't export {}: {reason}.", path.display()),
+            Operation::SaveCreditsList(path) => format!(
+                "Couldn't save the Credits List to {}: {reason}.",
+                path.display()
+            ),
         },
         Outcome::Crashed(Operation::Build) => {
             "Build failed: the build stopped unexpectedly.".to_owned()
