@@ -17,7 +17,7 @@ pub struct Credit {
 
 impl Credit {
     /// A Credit of these fields, or `None` if every one is unknown.
-    fn of_fields(
+    pub(crate) fn of_fields(
         artist: Option<String>,
         title: Option<String>,
         date: Option<String>,

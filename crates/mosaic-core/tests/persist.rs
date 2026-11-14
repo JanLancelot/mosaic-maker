@@ -72,6 +72,42 @@ fn a_saved_mosaic_opens_and_is_inspectable_after_its_source_library_is_deleted()
     );
 }
 
+#[test]
+fn an_opened_mosaic_has_the_credits_it_was_built_with_after_its_credits_file_changes() {
+    let fixture = Fixture::new();
+    fixture.add_file(
+        "credits.csv",
+        b"path,artist,title,date,collection,link\n\
+          red.png,Katsushika Hokusai,Red Fuji,c. 1830,The Met,https://example.org/red\n\
+          colors/blue.png,,Blue,,,\n",
+    );
+    let mosaic = striped_mosaic_with(&fixture, &SETTINGS);
+    let path = fixture.path("striped.mosaic");
+    mosaic.save(&path).unwrap();
+    fixture.add_file("credits.csv", b"path,title\nred.png,Edited\n");
+
+    let opened = Mosaic::open(&path).unwrap();
+
+    let red = opened.source_image_at(tile(0, 0)).unwrap();
+    let credit = red.credit().expect("red.png kept its Credit");
+    assert_eq!(credit.artist(), Some("Katsushika Hokusai"));
+    assert_eq!(credit.title(), Some("Red Fuji"));
+    assert_eq!(credit.date(), Some("c. 1830"));
+    assert_eq!(credit.collection(), Some("The Met"));
+    assert_eq!(credit.link(), Some("https://example.org/red"));
+    let blue = opened
+        .source_image_at(tile(1, 0))
+        .unwrap()
+        .credit()
+        .unwrap();
+    assert_eq!(
+        (blue.artist(), blue.title(), blue.link()),
+        (None, Some("Blue"), None)
+    );
+    let green = opened.source_image_at(tile(0, 1)).unwrap();
+    assert_eq!(green.credit(), None);
+}
+
 /// A 3 × 2 Mosaic File saved by Mosaic Maker v0.1.0 (format version 1), built like
 /// `striped_mosaic` with Seed 7 from a Source Library at `/tmp/mosaic-v1-fixture/library`.
 const VERSION_1_MOSAIC_FILE: &str = concat!(
@@ -171,13 +207,19 @@ fn set_format_version(path: &Path, format_version: u32) {
 }
 
 #[test]
-fn opening_a_mosaic_file_of_another_format_version_is_an_error() {
+fn opening_a_mosaic_file_of_a_format_version_other_than_1_or_2_is_an_error() {
     let fixture = Fixture::new();
     let path = fixture.path("striped.mosaic");
     striped_mosaic(&fixture).save(&path).unwrap();
-    set_format_version(&path, 2);
 
-    let opened = Mosaic::open(&path);
+    for format_version in [0, 3] {
+        set_format_version(&path, format_version);
 
-    assert!(matches!(opened, Err(OpenError::UnsupportedVersion(2))));
+        let opened = Mosaic::open(&path);
+
+        assert!(
+            matches!(opened, Err(OpenError::UnsupportedVersion(version)) if version == format_version),
+            "format version {format_version}"
+        );
+    }
 }
