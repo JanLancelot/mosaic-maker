@@ -42,3 +42,52 @@ fn a_source_image_takes_the_credit_of_its_row_in_the_credits_file() {
     assert_eq!(credit.link(), Some("https://example.org/red"));
     assert!(blue(&mosaic).credit().is_none());
 }
+
+#[test]
+fn columns_come_in_any_order_only_path_is_needed_and_unknown_columns_are_ignored() {
+    let fixture = Fixture::new();
+    fixture.add_file(
+        "credits.csv",
+        b"my notes,artist,path\n\
+          keep this,  Hiroshige  ,  red.png  \n",
+    );
+
+    let mosaic = red_and_blue(&fixture);
+
+    let credit = red(&mosaic).credit().expect("red.png has a Credit");
+    assert_eq!(credit.artist(), Some("Hiroshige"));
+    assert_eq!(
+        (
+            credit.title(),
+            credit.date(),
+            credit.collection(),
+            credit.link()
+        ),
+        (None, None, None, None)
+    );
+}
+
+#[test]
+fn paths_into_subfolders_are_written_with_slashes() {
+    let fixture = Fixture::new();
+    fixture.add_file("credits.csv", b"path,title\nprints/red.png,Red Fuji\n");
+    fixture.add_source_image("prints/red.png", &solid(8, 8, RED));
+    let target_image = fixture.set_target_image(&solid(10, 10, RED));
+
+    let mosaic = fixture.build(&target_image, 1);
+
+    assert_eq!(red(&mosaic).credit().unwrap().title(), Some("Red Fuji"));
+}
+
+#[test]
+fn a_credits_file_saved_with_a_byte_order_mark_reads_its_first_column() {
+    let fixture = Fixture::new();
+    fixture.add_file(
+        "credits.csv",
+        "\u{feff}path,title\nred.png,Red Fuji\n".as_bytes(),
+    );
+
+    let mosaic = red_and_blue(&fixture);
+
+    assert_eq!(red(&mosaic).credit().unwrap().title(), Some("Red Fuji"));
+}
