@@ -16,11 +16,21 @@ impl Mosaic {
         for source_image in self.source_images() {
             let tiles = self.tiles_filled_by(source_image.id()).len();
             match source_image.credit() {
-                Some(credit) => credited.push((credit, tiles)),
+                Some(credit) => credited.push((credit, source_image, tiles)),
                 None => uncredited.push((source_image, tiles)),
             }
         }
-        credited.sort_by_key(|(credit, _)| credit.artist().map(str::to_owned));
+        // By artist then title ignoring case, unknown ones after known ones, then file name.
+        credited.sort_by_cached_key(|(credit, source_image, _)| {
+            let ignoring_case =
+                |field: Option<&str>| (field.is_none(), field.map(str::to_lowercase));
+            (
+                ignoring_case(credit.artist()),
+                ignoring_case(credit.title()),
+                source_image.file_name(),
+                source_image.last_known_path(),
+            )
+        });
         uncredited.sort_by_key(|(source_image, _)| source_image.file_name());
 
         let mut list = String::new();
@@ -29,7 +39,7 @@ impl Mosaic {
         list.push_str("\n\n## Source Images\n\n");
         list.push_str("| Artist | Title | Date | Collection | Tiles |\n");
         list.push_str("| --- | --- | --- | --- | ---: |\n");
-        for (credit, tiles) in credited {
+        for (credit, _, tiles) in credited {
             let text = |field: Option<&str>| field.unwrap_or_default().to_owned();
             let _ = writeln!(
                 list,

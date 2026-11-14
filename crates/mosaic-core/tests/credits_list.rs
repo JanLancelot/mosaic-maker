@@ -3,7 +3,9 @@
 
 mod common;
 
-use common::{Fixture, striped_mosaic};
+use common::{Fixture, solid, striped_mosaic};
+use image::{Rgb, RgbImage};
+use mosaic_core::{BuildSettings, Mosaic};
 
 /// Writes `contents` as the Credits File beside the Target Image, outside the Source Library.
 fn add_target_image_credits_file(fixture: &Fixture, contents: &[u8]) {
@@ -45,6 +47,66 @@ fn the_credits_list_credits_the_target_image_then_each_source_image_with_its_til
          | File | Tiles |\n\
          | --- | ---: |\n\
          | green.png | 1 |\n"
+    );
+}
+
+/// A one-row Mosaic of Source Images at `paths`, each a distinct gray filling one Tile, in
+/// order, credited by `credits_file` in the Source Library.
+fn one_tile_each(fixture: &Fixture, paths: &[&str], credits_file: &[u8]) -> Mosaic {
+    fixture.add_file("credits.csv", credits_file);
+    let gray = |i: usize| Rgb([(i * 255 / paths.len()) as u8; 3]);
+    for (i, path) in paths.iter().enumerate() {
+        fixture.add_source_image(path, &solid(8, 8, gray(i)));
+    }
+    let target = RgbImage::from_fn(10 * paths.len() as u32, 10, |x, _| gray(x as usize / 10));
+    let target_image = fixture.set_target_image(&target);
+    let settings = BuildSettings {
+        tiles_across: paths.len() as u32,
+        repeat_radius: 0,
+        seed: 0,
+    };
+    fixture.build_with_settings(&target_image, &settings).mosaic
+}
+
+/// The Source Images section of `mosaic`'s Credits List, from its table's first row up to the
+/// next section.
+fn source_image_rows(mosaic: &Mosaic) -> String {
+    let list = mosaic.credits_list();
+    let table = list
+        .split("| --- | --- | --- | --- | ---: |\n")
+        .nth(1)
+        .expect("a Source Images table");
+    table.split("\n## ").next().unwrap().to_owned()
+}
+
+#[test]
+fn source_images_are_sorted_by_artist_then_title_ignoring_case_with_no_artist_last_then_file_name()
+{
+    let fixture = Fixture::new();
+    let mosaic = one_tile_each(
+        &fixture,
+        &[
+            "a.png", "z/b.png", "c.png", "d.png", "a/e.png", "f.png", "g.png",
+        ],
+        b"path,artist,title,date\n\
+          a.png,utagawa,B,\n\
+          z/b.png,Abraham,z,\n\
+          c.png,,Alpha,\n\
+          d.png,Utagawa,a,\n\
+          a/e.png,abraham,Z,\n\
+          f.png,,beta,\n\
+          g.png,,,1900\n",
+    );
+
+    assert_eq!(
+        source_image_rows(&mosaic),
+        "| Abraham | z |  |  | 1 |\n\
+         | abraham | Z |  |  | 1 |\n\
+         | Utagawa | a |  |  | 1 |\n\
+         | utagawa | B |  |  | 1 |\n\
+         |  | Alpha |  |  | 1 |\n\
+         |  | beta |  |  | 1 |\n\
+         |  |  | 1900 |  | 1 |\n"
     );
 }
 
