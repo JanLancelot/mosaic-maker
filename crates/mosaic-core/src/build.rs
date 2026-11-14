@@ -298,7 +298,7 @@ fn analyse_source_library(
         .position(|path| path == Path::new(CREDITS_FILE_NAME))
         .map(|index| files.remove(index));
     let credits_by_path = credits_file
-        .and_then(|path| Credits::read(&source_library.join(path)))
+        .map(|path| Credits::read(&source_library.join(path), warnings))
         .unwrap_or_default();
 
     let total = files.len();

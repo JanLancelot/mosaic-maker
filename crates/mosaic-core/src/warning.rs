@@ -36,6 +36,12 @@ pub enum BuildWarning {
     /// Every Source Image already filled a Tile within the Repeat Radius of `tile`, so for
     /// this Tile alone the radius shrank to `repeat_radius`.
     RepeatRadiusRelaxed { tile: Tile, repeat_radius: u32 },
+    /// The Credits File at `credits_file` couldn't be read or parsed, so the build went on
+    /// without any of its Credits.
+    UnreadableCreditsFile {
+        credits_file: PathBuf,
+        reason: CreditsFileError,
+    },
 }
 
 impl fmt::Display for BuildWarning {
@@ -52,8 +58,27 @@ impl fmt::Display for BuildWarning {
                 "Repeat Radius relaxed to {repeat_radius} for the Tile at column {}, row {}",
                 tile.column, tile.row
             ),
+            BuildWarning::UnreadableCreditsFile {
+                credits_file,
+                reason,
+            } => write!(
+                f,
+                "ignored the Credits File {}: {reason}",
+                credits_file.display()
+            ),
         }
     }
+}
+
+/// Why a Credits File couldn't be used.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum CreditsFileError {
+    #[error("it couldn't be read ({0})")]
+    Unreadable(String),
+    #[error("it isn't valid CSV ({0})")]
+    Unparseable(String),
+    #[error("its header row has no `path` column")]
+    NoPathColumn,
 }
 
 /// Why a file in the Source Library was not used as a Source Image.

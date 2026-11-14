@@ -1,5 +1,8 @@
 use std::collections::HashMap;
+use std::io;
 use std::path::{Component, Path};
+
+use crate::warning::{BuildWarning, CreditsFileError};
 
 /// The name of a Credits File.
 pub(crate) const CREDITS_FILE_NAME: &str = "credits.csv";
@@ -81,26 +84,38 @@ pub(crate) struct Credits {
 }
 
 impl Credits {
-    /// Reads the Credits File at `path`.
-    pub(crate) fn read(path: &Path) -> Option<Self> {
-        let contents = std::fs::read(path).ok()?;
-        Self::parse(&contents)
+    /// Reads the Credits File at `path`. A missing file gives no Credits. One that can't be
+    /// read or parsed gives none either, with a warning.
+    pub(crate) fn read(path: &Path, warnings: &mut Vec<BuildWarning>) -> Self {
+        let parsed = match std::fs::read(path) {
+            Ok(contents) => Self::parse(&contents),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Self::default(),
+            Err(error) => Err(CreditsFileError::Unreadable(error.to_string())),
+        };
+        parsed.unwrap_or_else(|reason| {
+            warnings.push(BuildWarning::UnreadableCreditsFile {
+                credits_file: path.to_owned(),
+                reason,
+            });
+            Self::default()
+        })
     }
 
-    fn parse(contents: &[u8]) -> Option<Self> {
+    fn parse(contents: &[u8]) -> Result<Self, CreditsFileError> {
+        let unparseable = |error: csv::Error| CreditsFileError::Unparseable(error.to_string());
         let mut reader = csv::ReaderBuilder::new()
             .trim(csv::Trim::All)
             .flexible(true)
             .from_reader(contents);
-        let headers = reader.headers().ok()?.clone();
+        let headers = reader.headers().map_err(unparseable)?.clone();
         let column = |name: &str| headers.iter().position(|header| header == name);
-        let path_column = column("path")?;
+        let path_column = column("path").ok_or(CreditsFileError::NoPathColumn)?;
         let [artist, title, date, collection, link] =
             ["artist", "title", "date", "collection", "link"].map(column);
 
         let mut by_path = HashMap::new();
         for record in reader.records() {
-            let record = record.ok()?;
+            let record = record.map_err(unparseable)?;
             let field = |column: Option<usize>| {
                 column
                     .and_then(|column| record.get(column))
@@ -119,7 +134,7 @@ impl Credits {
             );
             by_path.entry(path).or_insert(credit);
         }
-        Some(Self { by_path })
+        Ok(Self { by_path })
     }
 
     /// The Credit given for `relative_path`, if any.

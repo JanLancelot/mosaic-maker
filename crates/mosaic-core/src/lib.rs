@@ -24,4 +24,4 @@ pub use export::{ExportError, ExportReport, MAX_EXPORT_PIXELS};
 pub use mosaic::{Mosaic, RENDERED_TILE_SIZE, SourceImage, SourceImageId, THUMBNAIL_SIZE, Tile};
 pub use persist::{OpenError, SaveError};
 pub use viewport::{ScreenPoint, ScreenRect, Viewport};
-pub use warning::{BuildReport, BuildStats, BuildWarning, SkipReason};
+pub use warning::{BuildReport, BuildStats, BuildWarning, CreditsFileError, SkipReason};

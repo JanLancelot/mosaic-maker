@@ -3,19 +3,31 @@
 
 mod common;
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use common::{BLUE, Fixture, RED, solid, striped_mosaic_with, tiles};
 use image::{Rgb, RgbImage};
-use mosaic_core::{BuildSettings, Mosaic, SourceImage, SourceImageId, Tile};
+use mosaic_core::{
+    BuildSettings, BuildWarning, Built, CreditsFileError, Mosaic, SourceImage, SourceImageId, Tile,
+};
 
 /// A 2 × 1 Mosaic whose left Tile is filled from `red.png` and right Tile from `blue.png`.
 fn red_and_blue(fixture: &Fixture) -> Mosaic {
+    build_red_and_blue(fixture).mosaic
+}
+
+/// Like `red_and_blue`, with the build's report.
+fn build_red_and_blue(fixture: &Fixture) -> Built {
     fixture.add_source_image("red.png", &solid(8, 8, RED));
     fixture.add_source_image("blue.png", &solid(8, 8, BLUE));
     let target = RgbImage::from_fn(20, 10, |x, _| if x < 10 { RED } else { BLUE });
     let target_image = fixture.set_target_image(&target);
-    fixture.build(&target_image, 2)
+    fixture.build_reporting(&target_image, 2)
+}
+
+/// Where the fixture's Credits File is.
+fn credits_file(fixture: &Fixture) -> PathBuf {
+    fixture.source_library().join("credits.csv")
 }
 
 fn red(mosaic: &Mosaic) -> &SourceImage {
@@ -231,4 +243,21 @@ fn a_credits_file_saved_with_a_byte_order_mark_reads_its_first_column() {
     let mosaic = red_and_blue(&fixture);
 
     assert_eq!(red(&mosaic).credit().unwrap().title(), Some("Red Fuji"));
+}
+
+#[test]
+fn a_credits_file_with_no_path_column_is_reported_and_the_build_goes_on_without_credits() {
+    let fixture = Fixture::new();
+    fixture.add_file("credits.csv", b"file,title\nred.png,Red Fuji\n");
+
+    let built = build_red_and_blue(&fixture);
+
+    assert_eq!(
+        built.report.warnings,
+        [BuildWarning::UnreadableCreditsFile {
+            credits_file: credits_file(&fixture),
+            reason: CreditsFileError::NoPathColumn,
+        }]
+    );
+    assert!(red(&built.mosaic).credit().is_none());
 }
