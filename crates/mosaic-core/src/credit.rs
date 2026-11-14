@@ -16,6 +16,31 @@ pub struct Credit {
 }
 
 impl Credit {
+    /// A Credit of these fields, or `None` if every one is unknown.
+    fn of_fields(
+        artist: Option<String>,
+        title: Option<String>,
+        date: Option<String>,
+        collection: Option<String>,
+        link: Option<String>,
+    ) -> Option<Self> {
+        let credit = Self {
+            artist,
+            title,
+            date,
+            collection,
+            link,
+        };
+        let fields = [
+            &credit.artist,
+            &credit.title,
+            &credit.date,
+            &credit.collection,
+            &credit.link,
+        ];
+        fields.iter().any(|field| field.is_some()).then_some(credit)
+    }
+
     pub fn artist(&self) -> Option<&str> {
         self.artist.as_deref()
     }
@@ -41,7 +66,8 @@ impl Credit {
 /// The Credits read from a Credits File, by path relative to its folder with `/` separators.
 #[derive(Debug, Default)]
 pub(crate) struct Credits {
-    by_path: HashMap<String, Credit>,
+    /// `None` for a path whose row leaves every field blank.
+    by_path: HashMap<String, Option<Credit>>,
 }
 
 impl Credits {
@@ -74,13 +100,13 @@ impl Credits {
             let Some(path) = field(Some(path_column)) else {
                 continue;
             };
-            let credit = Credit {
-                artist: field(artist),
-                title: field(title),
-                date: field(date),
-                collection: field(collection),
-                link: field(link),
-            };
+            let credit = Credit::of_fields(
+                field(artist),
+                field(title),
+                field(date),
+                field(collection),
+                field(link),
+            );
             by_path.entry(path).or_insert(credit);
         }
         Some(Self { by_path })
@@ -88,7 +114,7 @@ impl Credits {
 
     /// The Credit given for `relative_path`, if any.
     pub(crate) fn of(&self, relative_path: &Path) -> Option<&Credit> {
-        self.by_path.get(&slash_path(relative_path)?)
+        self.by_path.get(&slash_path(relative_path)?)?.as_ref()
     }
 }
 

@@ -44,6 +44,19 @@ fn a_source_image_takes_the_credit_of_its_row_in_the_credits_file() {
 }
 
 #[test]
+fn a_row_with_every_field_blank_gives_no_credit() {
+    let fixture = Fixture::new();
+    fixture.add_file(
+        "credits.csv",
+        b"path,artist,title,date,collection,link\nred.png, ,,  ,,\n",
+    );
+
+    let mosaic = red_and_blue(&fixture);
+
+    assert!(red(&mosaic).credit().is_none());
+}
+
+#[test]
 fn columns_come_in_any_order_only_path_is_needed_and_unknown_columns_are_ignored() {
     let fixture = Fixture::new();
     fixture.add_file(
