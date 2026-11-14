@@ -15,11 +15,16 @@ use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipArchive, ZipWriter};
 
 use crate::build::BuildSettings;
+use crate::credit::Credit;
 use crate::mosaic::{Mosaic, RENDERED_TILE_SIZE, SourceImage, SourceImageId, THUMBNAIL_SIZE};
 
-/// Bump whenever the manifest's layout or meaning changes. Files of any other version are
-/// refused rather than misread.
-const FORMAT_VERSION: u32 = 1;
+/// Bump whenever the manifest's layout or meaning changes, and keep opening the older versions
+/// in [`OPENABLE_FORMAT_VERSIONS`]. Files of any other version are refused rather than misread.
+///
+/// Version 2 added Credits; a version 1 file opens with no Credits.
+const FORMAT_VERSION: u32 = 2;
+
+const OPENABLE_FORMAT_VERSIONS: std::ops::RangeInclusive<u32> = 1..=FORMAT_VERSION;
 
 const MANIFEST: &str = "manifest.json";
 const RENDERED: &str = "mosaic.png";
@@ -70,6 +75,48 @@ struct SourceImageEntry {
     file_name: String,
     /// Relative to `source_library`.
     last_known_path: PathBuf,
+    /// Absent when the Source Image has no Credit, and in version 1 files.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    credit: Option<CreditEntry>,
+}
+
+/// A [`Credit`]: each field is absent when unknown.
+#[derive(Serialize, Deserialize)]
+struct CreditEntry {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    artist: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    title: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    date: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    collection: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    link: Option<String>,
+}
+
+impl CreditEntry {
+    fn of(credit: &Credit) -> Self {
+        let field = |field: Option<&str>| field.map(str::to_owned);
+        Self {
+            artist: field(credit.artist()),
+            title: field(credit.title()),
+            date: field(credit.date()),
+            collection: field(credit.collection()),
+            link: field(credit.link()),
+        }
+    }
+
+    /// The Credit of this entry, or `None` if it leaves every field unknown.
+    fn into_credit(self) -> Option<Credit> {
+        Credit::of_fields(
+            self.artist,
+            self.title,
+            self.date,
+            self.collection,
+            self.link,
+        )
+    }
 }
 
 /// Why a Mosaic couldn't be saved.
@@ -146,6 +193,7 @@ impl Mosaic {
                     id: source_image.id().to_string(),
                     file_name: source_image.file_name().into_owned(),
                     last_known_path: source_image.last_known_path().to_owned(),
+                    credit: source_image.credit().map(CreditEntry::of),
                 })
                 .collect(),
             tiles: self.tile_source_images().to_vec(),
@@ -160,7 +208,7 @@ impl Mosaic {
 
         let manifest = read_entry(&mut zip, MANIFEST)?;
         let Version { format_version } = serde_json::from_slice(&manifest).map_err(corrupt)?;
-        if format_version != FORMAT_VERSION {
+        if !OPENABLE_FORMAT_VERSIONS.contains(&format_version) {
             return Err(OpenError::UnsupportedVersion(format_version));
         }
         let Manifest {
@@ -204,7 +252,13 @@ impl Mosaic {
                 if thumbnail.dimensions() != (THUMBNAIL_SIZE, THUMBNAIL_SIZE) {
                     return Err(corrupt(format!("the Thumbnail of {id} is the wrong size")));
                 }
-                Ok(SourceImage::new(id, entry.last_known_path, thumbnail, None))
+                let credit = entry.credit.and_then(CreditEntry::into_credit);
+                Ok(SourceImage::new(
+                    id,
+                    entry.last_known_path,
+                    thumbnail,
+                    credit,
+                ))
             })
             .collect::<Result<Vec<_>, OpenError>>()?;
 
