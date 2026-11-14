@@ -7,6 +7,7 @@ use image::imageops::{self, FilterType};
 
 use crate::analysis;
 use crate::build::BuildSettings;
+use crate::credit::Credit;
 
 /// Side length, in pixels, of one Tile in a Mosaic's rendered image.
 pub const RENDERED_TILE_SIZE: u32 = 32;
@@ -60,6 +61,7 @@ pub struct SourceImage {
     id: SourceImageId,
     last_known_path: PathBuf,
     thumbnail: RgbImage,
+    credit: Option<Credit>,
 }
 
 impl fmt::Debug for SourceImage {
@@ -68,16 +70,23 @@ impl fmt::Debug for SourceImage {
         f.debug_struct("SourceImage")
             .field("id", &self.id)
             .field("last_known_path", &self.last_known_path)
+            .field("credit", &self.credit)
             .finish_non_exhaustive()
     }
 }
 
 impl SourceImage {
-    pub(crate) fn new(id: SourceImageId, last_known_path: PathBuf, thumbnail: RgbImage) -> Self {
+    pub(crate) fn new(
+        id: SourceImageId,
+        last_known_path: PathBuf,
+        thumbnail: RgbImage,
+        credit: Option<Credit>,
+    ) -> Self {
         Self {
             id,
             last_known_path,
             thumbnail,
+            credit,
         }
     }
 
@@ -93,6 +102,11 @@ impl SourceImage {
     /// The Source Image center-cropped and scaled to `THUMBNAIL_SIZE` pixels square.
     pub fn thumbnail(&self) -> &RgbImage {
         &self.thumbnail
+    }
+
+    /// Who made the Source Image and where it comes from, if its Credits File says.
+    pub fn credit(&self) -> Option<&Credit> {
+        self.credit.as_ref()
     }
 
     /// The name of the Source Image's file, for showing to the user.

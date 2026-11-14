@@ -204,7 +204,7 @@ impl Mosaic {
                 if thumbnail.dimensions() != (THUMBNAIL_SIZE, THUMBNAIL_SIZE) {
                     return Err(corrupt(format!("the Thumbnail of {id} is the wrong size")));
                 }
-                Ok(SourceImage::new(id, entry.last_known_path, thumbnail))
+                Ok(SourceImage::new(id, entry.last_known_path, thumbnail, None))
             })
             .collect::<Result<Vec<_>, OpenError>>()?;
 

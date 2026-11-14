@@ -6,6 +6,7 @@ license.workspace = true
 
 [dependencies]
 blake3 = "1.8"
+csv = "1.4"
 dirs = "6"
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
 rayon = "1.12"

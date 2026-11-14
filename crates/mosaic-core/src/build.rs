@@ -11,7 +11,8 @@ use crate::assign::{self, Assignment};
 use crate::cache::AnalysisCache;
 use crate::cancel::CancelToken;
 use crate::color_signature::ColorSignature;
-use crate::mosaic::{Mosaic, RENDERED_TILE_SIZE, SourceImage, Tile};
+use crate::credit::{CREDITS_FILE_NAME, Credit, Credits};
+use crate::mosaic::{Mosaic, RENDERED_TILE_SIZE, SourceImage, SourceImageId, Tile};
 use crate::scan;
 use crate::warning::{BuildReport, BuildStats, BuildWarning};
 
@@ -151,7 +152,8 @@ pub fn build(
 
     let cache = &cache.kept_out_of(source_library);
     let mut warnings = Vec::new();
-    let analysed = analyse_source_library(source_library, cache, &mut warnings, &mut reporter)?;
+    let SourceLibrary { analysed, credits } =
+        analyse_source_library(source_library, cache, &mut warnings, &mut reporter)?;
     if analysed.is_empty() {
         return Err(BuildError::EmptySourceLibrary);
     }
@@ -229,7 +231,12 @@ pub fn build(
         .iter()
         .zip(thumbnails_and_rendered)
         .map(|(analysed, (thumbnail, _))| {
-            SourceImage::new(analysed.id, analysed.last_known_path.clone(), thumbnail)
+            SourceImage::new(
+                analysed.id,
+                analysed.last_known_path.clone(),
+                thumbnail,
+                credits.get(&analysed.id).cloned(),
+            )
         })
         .collect();
 
@@ -265,17 +272,34 @@ fn open_image(path: &Path) -> Result<RgbImage, image::ImageError> {
     ))
 }
 
+/// What a build finds in its Source Library.
+struct SourceLibrary {
+    /// Every Source Image, in path order.
+    analysed: Vec<AnalysedSourceImage>,
+    /// The Credit of each Source Image that has one.
+    credits: HashMap<SourceImageId, Credit>,
+}
+
 /// Analyses every decodable image in `source_library` and its subfolders, reusing what
-/// `cache` holds. Source Images come in path order, so builds are repeatable however the
-/// parallel work interleaves. Byte-identical files are one Source Image, last seen at the
-/// first path. Files that can't be Source Images are skipped with a warning.
+/// `cache` holds, and gives each the Credit its Credits File holds for it. Source Images
+/// come in path order, so builds are repeatable however the parallel work interleaves.
+/// Byte-identical files are one Source Image, last seen at the first path and credited by
+/// the first path with a Credit. Files that can't be Source Images are skipped with a
+/// warning; the Credits File is not considered as one.
 fn analyse_source_library(
     source_library: &Path,
     cache: &AnalysisCache,
     warnings: &mut Vec<BuildWarning>,
     reporter: &mut Reporter<'_, impl FnMut(Progress)>,
-) -> Result<Vec<AnalysedSourceImage>, BuildError> {
-    let files = scan::files_in(source_library, warnings).map_err(BuildError::SourceLibrary)?;
+) -> Result<SourceLibrary, BuildError> {
+    let mut files = scan::files_in(source_library, warnings).map_err(BuildError::SourceLibrary)?;
+    let credits_file = files
+        .iter()
+        .position(|path| path == Path::new(CREDITS_FILE_NAME))
+        .map(|index| files.remove(index));
+    let credits_by_path = credits_file
+        .and_then(|path| Credits::read(&source_library.join(path)))
+        .unwrap_or_default();
 
     let total = files.len();
     let outcomes = in_parallel(
@@ -287,9 +311,15 @@ fn analyse_source_library(
 
     let mut analysed: Vec<AnalysedSourceImage> = Vec::with_capacity(total);
     let mut seen = HashSet::new();
+    let mut credits = HashMap::new();
     for (relative_path, outcome) in files.into_iter().zip(outcomes) {
         match outcome {
             Ok(source_image) => {
+                if let Some(credit) = credits_by_path.of(&relative_path) {
+                    credits
+                        .entry(source_image.id)
+                        .or_insert_with(|| credit.clone());
+                }
                 if seen.insert(source_image.id) {
                     analysed.push(source_image);
                 }
@@ -300,7 +330,7 @@ fn analyse_source_library(
             }),
         }
     }
-    Ok(analysed)
+    Ok(SourceLibrary { analysed, credits })
 }
 
 /// Runs `work` on every one of `items` across all cores, returning the results in the same
