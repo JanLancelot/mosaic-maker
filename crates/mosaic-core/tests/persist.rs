@@ -108,6 +108,46 @@ fn an_opened_mosaic_has_the_credits_it_was_built_with_after_its_credits_file_cha
     assert_eq!(green.credit(), None);
 }
 
+#[test]
+fn an_opened_mosaic_has_the_target_image_credit_it_was_built_with_after_its_credits_file_goes() {
+    let fixture = Fixture::new();
+    let credits_file = fixture.path("credits.csv");
+    std::fs::write(
+        &credits_file,
+        b"path,artist,title,date,collection,link\n\
+          target.png,Katsushika Hokusai,The Great Wave,c. 1831,The Met,https://example.org/wave\n",
+    )
+    .unwrap();
+    let mosaic = striped_mosaic_with(&fixture, &SETTINGS);
+    let path = fixture.path("striped.mosaic");
+    mosaic.save(&path).unwrap();
+    std::fs::remove_file(&credits_file).unwrap();
+
+    let opened = Mosaic::open(&path).unwrap();
+
+    let credit = opened
+        .target_image_credit()
+        .expect("the Target Image kept its Credit");
+    assert_eq!(credit.artist(), Some("Katsushika Hokusai"));
+    assert_eq!(credit.title(), Some("The Great Wave"));
+    assert_eq!(credit.date(), Some("c. 1831"));
+    assert_eq!(credit.collection(), Some("The Met"));
+    assert_eq!(credit.link(), Some("https://example.org/wave"));
+}
+
+#[test]
+fn an_opened_mosaic_built_without_a_target_image_credit_has_none() {
+    let fixture = Fixture::new();
+    let path = fixture.path("striped.mosaic");
+    striped_mosaic_with(&fixture, &SETTINGS)
+        .save(&path)
+        .unwrap();
+
+    let opened = Mosaic::open(&path).unwrap();
+
+    assert_eq!(opened.target_image_credit(), None);
+}
+
 /// A 3 × 2 Mosaic File saved by Mosaic Maker v0.1.0 (format version 1), built like
 /// `striped_mosaic` with Seed 7 from a Source Library at `/tmp/mosaic-v1-fixture/library`.
 const VERSION_1_MOSAIC_FILE: &str = concat!(
@@ -134,6 +174,7 @@ fn a_mosaic_file_saved_by_v0_1_0_opens_with_no_credits() {
         ["green.png", "red.png", "blue.png"],
     ];
     assert_eq!(file_names, rows.concat());
+    assert_eq!(opened.target_image_credit(), None);
     for source_image in source_images {
         assert_eq!(source_image.credit(), None, "{}", source_image.file_name());
     }

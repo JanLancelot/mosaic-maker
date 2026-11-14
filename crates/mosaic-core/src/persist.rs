@@ -38,6 +38,9 @@ fn thumbnail_entry(id: SourceImageId) -> String {
 struct Manifest {
     format_version: u32,
     settings: Settings,
+    /// Absent when the Target Image has no Credit, and in version 1 files.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    target_image_credit: Option<CreditEntry>,
     grid: Grid,
     /// The Source Library's absolute path when the Mosaic was saved.
     source_library: PathBuf,
@@ -181,6 +184,7 @@ impl Mosaic {
                 repeat_radius,
                 seed,
             },
+            target_image_credit: self.target_image_credit().map(CreditEntry::of),
             grid: Grid {
                 columns: tiles_across,
                 rows: self.rows(),
@@ -214,6 +218,7 @@ impl Mosaic {
         let Manifest {
             format_version: _,
             settings,
+            target_image_credit,
             grid,
             source_library,
             source_images,
@@ -264,7 +269,7 @@ impl Mosaic {
 
         Ok(Mosaic::new(
             settings.target_image,
-            None,
+            target_image_credit.and_then(CreditEntry::into_credit),
             source_library,
             BuildSettings {
                 tiles_across: settings.tiles_across,
