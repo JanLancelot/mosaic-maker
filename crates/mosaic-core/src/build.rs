@@ -173,11 +173,23 @@ pub fn build(
     let target_image_credits = if shares_credits_file {
         credits_file
     } else {
-        Credits::read(
+        let credits = Credits::read(
             &folder_of(target_image).join(CREDITS_FILE_NAME),
             CreditsFileOf::TargetImage,
             &mut warnings,
-        )
+        );
+        // Its rows for other files are ignored, so only the Target Image's own can be repeated.
+        warnings.extend(
+            credits
+                .repeated_paths()
+                .iter()
+                .filter(|path| Some(Path::new(path)) == target_image_name)
+                .map(|path| BuildWarning::DuplicateCreditsPath {
+                    credits_file: CreditsFileOf::TargetImage,
+                    path: path.clone(),
+                }),
+        );
+        credits
     };
     let target_image_credit = target_image_name
         .and_then(|name| target_image_credits.of(name))
@@ -351,6 +363,12 @@ fn analyse_source_library(
                 CreditsFileOf::SourceLibrary,
                 warnings,
             );
+            warnings.extend(credits.repeated_paths().iter().map(|path| {
+                BuildWarning::DuplicateCreditsPath {
+                    credits_file: CreditsFileOf::SourceLibrary,
+                    path: path.clone(),
+                }
+            }));
             let mut paths = credits.paths_naming_none_of(&files);
             paths.retain(|path| Some(Path::new(path)) != target_image_name);
             if !paths.is_empty() {

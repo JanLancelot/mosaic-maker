@@ -414,6 +414,54 @@ fn the_target_image_takes_the_credit_of_its_row_in_the_credits_file_beside_it() 
 }
 
 #[test]
+fn other_files_listed_twice_in_the_credits_file_beside_the_target_image_give_no_warning() {
+    let fixture = Fixture::new();
+    add_target_image_credits_file(
+        &fixture,
+        b"path,title\n\
+          other.png,Another Target Image\n\
+          target.png,The Great Wave\n\
+          other.png,Again\n",
+    );
+
+    let built = build_red_and_blue(&fixture);
+
+    assert_eq!(built.report.warnings, []);
+    assert_eq!(
+        built.mosaic.target_image_credit().unwrap().title(),
+        Some("The Great Wave")
+    );
+}
+
+#[test]
+fn the_target_image_listed_twice_in_the_credits_file_beside_it_is_warned_about_and_its_first_row_is_used()
+ {
+    let fixture = Fixture::new();
+    add_target_image_credits_file(
+        &fixture,
+        b"path,title\n\
+          target.png,The Great Wave\n\
+          other.png,Another Target Image\n\
+          other.png,Again\n\
+          target.png,Second row\n",
+    );
+
+    let built = build_red_and_blue(&fixture);
+
+    assert_eq!(
+        built.report.warnings,
+        [BuildWarning::DuplicateCreditsPath {
+            credits_file: CreditsFileOf::TargetImage,
+            path: "target.png".to_owned(),
+        }]
+    );
+    assert_eq!(
+        built.mosaic.target_image_credit().unwrap().title(),
+        Some("The Great Wave")
+    );
+}
+
+#[test]
 fn an_unusable_credits_file_beside_the_target_image_is_reported_and_gives_it_no_credit() {
     let fixture = Fixture::new();
     add_target_image_credits_file(&fixture, b"file,title\ntarget.png,The Great Wave\n");
