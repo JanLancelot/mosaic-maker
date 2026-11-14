@@ -17,7 +17,7 @@ Who made a Source Image or the Target Image and where it comes from: its artist,
 _Avoid_: Metadata, attribution, caption, info
 
 **Credits File**:
-A `credits.csv` file that gives the Credits of pictures in its folder and below. The one at the root of a Source Library credits its Source Images; the one beside the Target Image credits it.
+A `credits.csv` file that gives Credits. Two are read: the one at the root of the Source Library credits its Source Images, and the one beside the Target Image credits it. Any other is ignored, with a warning.
 _Avoid_: Metadata file, sidecar, manifest
 
 **Credits List**:

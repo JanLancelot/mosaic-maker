@@ -43,6 +43,8 @@ Every Tile is someone's work, so each picture can have a **Credit**: its artist,
 - the one at the root of the Source Library credits its pictures;
 - the one beside the Target Image credits the Target Image. When the Target Image sits at the root of the Source Library, one file credits both.
 
+Any other `credits.csv` in the Source Library is ignored, with a warning.
+
 The first row names the columns: `path`, then any of `artist`, `title`, `date`, `collection` and `link`, in any order.
 
 ```csv
