@@ -154,10 +154,10 @@ pub fn build(
     let mut warnings = Vec::new();
     let target_image_name = target_image.file_name().map(Path::new);
     let shares_credits_file = same_folder(folder_of(target_image), source_library);
-    let SourceLibrary {
+    let AnalysedLibrary {
         analysed,
         credits,
-        credits_file,
+        credits_by_path,
     } = analyse_source_library(
         source_library,
         target_image_name.filter(|_| shares_credits_file),
@@ -171,7 +171,7 @@ pub fn build(
     // Read only now, so a Credits File the Target Image shares isn't read, or warned about,
     // twice.
     let target_image_credits = if shares_credits_file {
-        credits_file
+        credits_by_path
     } else {
         let credits = Credits::read(
             &folder_of(target_image).join(CREDITS_FILE_NAME),
@@ -327,13 +327,13 @@ fn same_folder(a: &Path, b: &Path) -> bool {
 }
 
 /// What a build finds in its Source Library.
-struct SourceLibrary {
+struct AnalysedLibrary {
     /// Every Source Image, in path order.
     analysed: Vec<AnalysedSourceImage>,
     /// The Credit of each Source Image that has one.
     credits: HashMap<SourceImageId, Credit>,
-    /// The Credits read from the Credits File at its root.
-    credits_file: Credits,
+    /// The Credits read from the Credits File at its root, by path.
+    credits_by_path: Credits,
 }
 
 /// Analyses every decodable image in `source_library` and its subfolders, reusing what
@@ -350,7 +350,7 @@ fn analyse_source_library(
     cache: &AnalysisCache,
     warnings: &mut Vec<BuildWarning>,
     reporter: &mut Reporter<'_, impl FnMut(Progress)>,
-) -> Result<SourceLibrary, BuildError> {
+) -> Result<AnalysedLibrary, BuildError> {
     let mut files = scan::files_in(source_library, warnings).map_err(BuildError::SourceLibrary)?;
     let credits_file = files
         .iter()
@@ -408,10 +408,10 @@ fn analyse_source_library(
             }),
         }
     }
-    Ok(SourceLibrary {
+    Ok(AnalysedLibrary {
         analysed,
         credits,
-        credits_file: credits_by_path,
+        credits_by_path,
     })
 }
 

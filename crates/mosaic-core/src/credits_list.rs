@@ -46,14 +46,14 @@ impl Mosaic {
         list.push_str("| Artist | Title | Date | Collection | Tiles |\n");
         list.push_str("| --- | --- | --- | --- | ---: |\n");
         for (credit, _, tiles) in credited {
-            let text = |field: Option<&str>| field.map(text).unwrap_or_default();
+            let escaped = |field: Option<&str>| field.map(escaped_for_markdown).unwrap_or_default();
             let _ = writeln!(
                 list,
                 "| {} | {} | {} | {} | {tiles} |",
-                text(credit.artist()),
-                title(credit, false).unwrap_or_default(),
-                text(credit.date()),
-                text(credit.collection()),
+                escaped(credit.artist()),
+                title(credit).unwrap_or_default(),
+                escaped(credit.date()),
+                escaped(credit.collection()),
             );
         }
         if !uncredited.is_empty() {
@@ -61,7 +61,11 @@ impl Mosaic {
             list.push_str("| File | Tiles |\n");
             list.push_str("| --- | ---: |\n");
             for (source_image, tiles) in uncredited {
-                let _ = writeln!(list, "| {} | {tiles} |", text(&source_image.file_name()));
+                let _ = writeln!(
+                    list,
+                    "| {} | {tiles} |",
+                    escaped_for_markdown(&source_image.file_name())
+                );
             }
         }
         list
@@ -72,7 +76,7 @@ impl Mosaic {
     fn target_image_line(&self) -> String {
         let Some(credit) = self.target_image_credit() else {
             let target_image = self.target_image();
-            return text(
+            return escaped_for_markdown(
                 &target_image
                     .file_name()
                     .unwrap_or(target_image.as_os_str())
@@ -80,10 +84,10 @@ impl Mosaic {
             );
         };
         [
-            credit.artist().map(text),
-            title(credit, true),
-            credit.date().map(text),
-            credit.collection().map(text),
+            credit.artist().map(escaped_for_markdown),
+            italic_title(credit),
+            credit.date().map(escaped_for_markdown),
+            credit.collection().map(escaped_for_markdown),
         ]
         .into_iter()
         .flatten()
@@ -93,13 +97,23 @@ impl Mosaic {
 }
 
 /// The Credit's shown title, linked by its web link if it has one. `None` if it has none.
-fn title(credit: &Credit, italic: bool) -> Option<String> {
-    let text = text(credit.shown_title()?);
-    let text = if italic { format!("*{text}*") } else { text };
-    Some(match credit.web_link() {
-        Some(link) => format!("[{text}]({})", destination(link)),
-        None => text,
-    })
+fn title(credit: &Credit) -> Option<String> {
+    let title = escaped_for_markdown(credit.shown_title()?);
+    Some(linked(credit, title))
+}
+
+/// Like [`title`], in italics.
+fn italic_title(credit: &Credit) -> Option<String> {
+    let title = escaped_for_markdown(credit.shown_title()?);
+    Some(linked(credit, format!("*{title}*")))
+}
+
+/// `markdown` linked by the Credit's web link, if it has one.
+fn linked(credit: &Credit, markdown: String) -> String {
+    match credit.web_link() {
+        Some(link) => format!("[{markdown}]({})", destination(link)),
+        None => markdown,
+    }
 }
 
 /// `field` with its whitespace collapsed to single spaces.
@@ -112,10 +126,10 @@ fn collapsed(field: &str) -> String {
 /// escaped only where it starts an entity, a `!` only before a bracket, and the field's start
 /// only where it would begin a heading or list, so ordinary text such as "Braun & Co." stays as
 /// written.
-fn text(field: &str) -> String {
+fn escaped_for_markdown(field: &str) -> String {
     let field = collapsed(field);
     let marker = block_marker(&field);
-    let mut text = String::new();
+    let mut escaped = String::new();
     for (at, character) in field.char_indices() {
         let rest = &field[at..];
         let escape = match character {
@@ -125,11 +139,11 @@ fn text(field: &str) -> String {
             _ => marker == Some(at),
         };
         if escape {
-            text.push('\\');
+            escaped.push('\\');
         }
-        text.push(character);
+        escaped.push(character);
     }
-    text
+    escaped
 }
 
 /// Where the character is that would make `field`, at the start of a line, begin a heading or
