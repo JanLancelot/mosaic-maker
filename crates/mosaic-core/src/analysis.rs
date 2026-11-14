@@ -17,11 +17,31 @@ pub(crate) struct Analysis {
 /// A Source Image together with its analysis.
 pub(crate) struct AnalysedSourceImage {
     pub(crate) id: SourceImageId,
-    /// Where the Source Image's file was found, relative to the Source Library.
-    pub(crate) last_known_path: PathBuf,
+    /// Every file in the Source Library holding the Source Image, relative to it and in path
+    /// order. Never empty.
+    paths: Vec<PathBuf>,
     pub(crate) analysis: Analysis,
     /// Whether `analysis` was read from the [`AnalysisCache`] rather than computed.
     pub(crate) from_cache: bool,
+}
+
+impl AnalysedSourceImage {
+    /// Every file in the Source Library holding the Source Image, relative to it and in path
+    /// order.
+    pub(crate) fn paths(&self) -> &[PathBuf] {
+        &self.paths
+    }
+
+    /// Where the Source Image was found: the first of its paths.
+    pub(crate) fn last_known_path(&self) -> &Path {
+        &self.paths[0]
+    }
+
+    /// Records that the Source Image was also found at `relative_path`, which comes after
+    /// every path it was found at so far.
+    pub(crate) fn also_found_at(&mut self, relative_path: PathBuf) {
+        self.paths.push(relative_path);
+    }
 }
 
 /// Reads the file at `relative_path` in `source_library` and analyses it, or reuses its
@@ -35,11 +55,11 @@ pub(crate) fn analyse_file(
     let bytes = std::fs::read(source_library.join(relative_path))
         .map_err(|error| SkipReason::Unreadable(error.to_string()))?;
     let id = SourceImageId::of_contents(&bytes);
-    let last_known_path = relative_path.to_owned();
+    let paths = vec![relative_path.to_owned()];
     if let Some(analysis) = cache.load(id) {
         return Ok(AnalysedSourceImage {
             id,
-            last_known_path,
+            paths,
             analysis,
             from_cache: true,
         });
@@ -53,7 +73,7 @@ pub(crate) fn analyse_file(
     cache.store_thumbnail(id, &scaled_to_thumbnail(&cropped));
     Ok(AnalysedSourceImage {
         id,
-        last_known_path,
+        paths,
         analysis,
         from_cache: false,
     })

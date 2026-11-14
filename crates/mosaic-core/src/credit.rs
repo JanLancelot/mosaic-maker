@@ -194,6 +194,12 @@ impl Credits {
     }
 }
 
+/// Whether `path`, as written in a Credits File, names the file at `relative_path` from the
+/// Credits File's folder.
+pub(crate) fn names(path: &str, relative_path: &Path) -> bool {
+    slash_path(relative_path).as_deref() == Some(path)
+}
+
 /// `relative_path` written with `/` separators, as a Credits File names it on every platform.
 fn slash_path(relative_path: &Path) -> Option<String> {
     let names: Option<Vec<&str>> = relative_path

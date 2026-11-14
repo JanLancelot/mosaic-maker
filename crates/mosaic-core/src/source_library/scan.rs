@@ -6,7 +6,7 @@ use crate::warning::{BuildWarning, SkipReason};
 /// builds are repeatable. Hidden files and folders (named with a leading `.`) are left
 /// out. A subfolder that can't be read is skipped with a warning; only an unreadable
 /// `source_library` itself is an error.
-pub(crate) fn files_in(
+pub(super) fn files_in(
     source_library: &Path,
     warnings: &mut Vec<BuildWarning>,
 ) -> std::io::Result<Vec<PathBuf>> {

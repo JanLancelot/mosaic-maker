@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 
@@ -11,9 +11,8 @@ use crate::assign::{self, Assignment};
 use crate::cache::AnalysisCache;
 use crate::cancel::CancelToken;
 use crate::color_signature::ColorSignature;
-use crate::credits_files::CreditsFiles;
 use crate::mosaic::{Mosaic, RENDERED_TILE_SIZE, SourceImage, SourceImageId, TargetImage, Tile};
-use crate::scan;
+use crate::source_library::{self, SourceLibraryContents};
 use crate::warning::{BuildReport, BuildStats, BuildWarning};
 
 /// The Repeat Radius a new build starts with.
@@ -151,18 +150,16 @@ pub fn build(
     let grid = Grid::over(&target, settings.tiles_across)?;
 
     let cache = &cache.kept_out_of(source_library);
-    let mut warnings = Vec::new();
-    let mut files =
-        scan::files_in(source_library, &mut warnings).map_err(BuildError::SourceLibrary)?;
-    let credits_files = CreditsFiles::read(target_image, source_library, &mut files, &mut warnings);
-    let AnalysedLibrary {
-        analysed,
-        identified_paths,
-    } = analyse_source_library(source_library, files, cache, &mut warnings, &mut reporter)?;
+    let SourceLibraryContents {
+        files,
+        credits,
+        mut warnings,
+    } = source_library::read(source_library, target_image).map_err(BuildError::SourceLibrary)?;
+    let analysed =
+        analyse_source_library(source_library, files, cache, &mut warnings, &mut reporter)?;
     if analysed.is_empty() {
         return Err(BuildError::EmptySourceLibrary);
     }
-    let credits = credits_files.source_image_credits(&identified_paths);
 
     let tile_count = grid.tile_count();
     reporter.report(Stage::MatchingTiles, 0, tile_count)?;
@@ -211,12 +208,12 @@ pub fn build(
         in_parallel(&used, Stage::Rendering, &mut reporter, |analysed| {
             let thumbnail = analysis::thumbnail(
                 source_library,
-                &analysed.last_known_path,
+                analysed.last_known_path(),
                 analysed.id,
                 cache,
             )
             .ok_or_else(|| BuildError::SourceImageChanged {
-                path: analysed.last_known_path.clone(),
+                path: analysed.last_known_path().to_owned(),
             })?;
             let rendered = imageops::resize(
                 &thumbnail,
@@ -239,9 +236,9 @@ pub fn build(
         .map(|(analysed, (thumbnail, _))| {
             SourceImage::new(
                 analysed.id,
-                analysed.last_known_path.clone(),
+                analysed.last_known_path().to_owned(),
                 thumbnail,
-                credits.get(&analysed.id).cloned(),
+                credits.of_source_image(analysed.paths()).cloned(),
             )
         })
         .collect();
@@ -250,7 +247,7 @@ pub fn build(
     let mosaic = Mosaic::new(
         TargetImage {
             path: absolute(target_image),
-            credit: credits_files.target_image_credit().cloned(),
+            credit: credits.of_target_image().cloned(),
         },
         absolute(source_library),
         settings.clone(),
@@ -281,18 +278,10 @@ fn open_image(path: &Path) -> Result<RgbImage, image::ImageError> {
     ))
 }
 
-/// What a build finds in its Source Library.
-struct AnalysedLibrary {
-    /// Every Source Image, in path order.
-    analysed: Vec<AnalysedSourceImage>,
-    /// Every path holding a Source Image, in path order, with its identity.
-    identified_paths: Vec<(PathBuf, SourceImageId)>,
-}
-
 /// Analyses every decodable image among `files`, the files in `source_library` and its
 /// subfolders in path order, reusing what `cache` holds. Source Images come in path order, so
 /// builds are repeatable however the parallel work interleaves. Byte-identical files are one
-/// Source Image, last seen at the first path. Files that can't be Source Images are skipped
+/// Source Image, found at each of their paths. Files that can't be Source Images are skipped
 /// with a warning.
 fn analyse_source_library(
     source_library: &Path,
@@ -300,7 +289,7 @@ fn analyse_source_library(
     cache: &AnalysisCache,
     warnings: &mut Vec<BuildWarning>,
     reporter: &mut Reporter<'_, impl FnMut(Progress)>,
-) -> Result<AnalysedLibrary, BuildError> {
+) -> Result<Vec<AnalysedSourceImage>, BuildError> {
     let total = files.len();
     let outcomes = in_parallel(
         &files,
@@ -310,26 +299,23 @@ fn analyse_source_library(
     )?;
 
     let mut analysed: Vec<AnalysedSourceImage> = Vec::with_capacity(total);
-    let mut identified_paths = Vec::with_capacity(total);
-    let mut seen = HashSet::new();
+    let mut index_of: HashMap<SourceImageId, usize> = HashMap::new();
     for (relative_path, outcome) in files.into_iter().zip(outcomes) {
         match outcome {
-            Ok(source_image) => {
-                identified_paths.push((relative_path, source_image.id));
-                if seen.insert(source_image.id) {
+            Ok(source_image) => match index_of.get(&source_image.id) {
+                Some(&index) => analysed[index].also_found_at(relative_path),
+                None => {
+                    index_of.insert(source_image.id, analysed.len());
                     analysed.push(source_image);
                 }
-            }
+            },
             Err(reason) => warnings.push(BuildWarning::SkippedFile {
                 path: relative_path,
                 reason,
             }),
         }
     }
-    Ok(AnalysedLibrary {
-        analysed,
-        identified_paths,
-    })
+    Ok(analysed)
 }
 
 /// Runs `work` on every one of `items` across all cores, returning the results in the same

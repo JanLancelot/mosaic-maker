@@ -9,12 +9,11 @@ mod cache;
 mod cancel;
 mod color_signature;
 mod credit;
-mod credits_files;
 mod credits_list;
 mod export;
 mod mosaic;
 mod persist;
-mod scan;
+mod source_library;
 mod viewport;
 mod warning;
 
