@@ -2,11 +2,22 @@
 //! many Tiles each Source Image fills, as Markdown.
 
 use std::fmt::Write;
+use std::io::Write as _;
+use std::path::Path;
 
 use crate::credit::Credit;
 use crate::mosaic::Mosaic;
+use crate::persist::{self, SaveError};
 
 impl Mosaic {
+    /// Writes the Credits List to a Markdown file at `path`, replacing any file there. An
+    /// existing file is left as it was if saving fails.
+    pub fn save_credits_list(&self, path: &Path) -> Result<(), SaveError> {
+        let credits_list = self.credits_list();
+        persist::write_replacing(path, |writer| writer.write_all(credits_list.as_bytes()))?;
+        Ok(())
+    }
+
     /// The Credits List as Markdown: a Target Image section with its Credit on one line, a
     /// Source Images table of every credited Source Image with how many Tiles it fills, and a
     /// Without a Credit table of the rest, left out when there are none.
