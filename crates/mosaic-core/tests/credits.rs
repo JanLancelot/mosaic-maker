@@ -261,3 +261,39 @@ fn a_credits_file_with_no_path_column_is_reported_and_the_build_goes_on_without_
     );
     assert!(red(&built.mosaic).credit().is_none());
 }
+
+#[test]
+fn an_unparseable_credits_file_is_reported_with_its_reason_and_none_of_its_credits_are_used() {
+    let fixture = Fixture::new();
+    // A good row, then one that isn't UTF-8, as a file saved in another encoding might be.
+    fixture.add_file(
+        "credits.csv",
+        b"path,title\nred.png,Red Fuji\nblue.png,Blue \xff\xfe\n",
+    );
+
+    let built = build_red_and_blue(&fixture);
+
+    match &built.report.warnings[..] {
+        [
+            BuildWarning::UnreadableCreditsFile {
+                credits_file: path,
+                reason: CreditsFileError::Unparseable(reason),
+            },
+        ] => {
+            assert_eq!(*path, credits_file(&fixture));
+            assert!(reason.contains("UTF-8"), "{reason}");
+        }
+        warnings => panic!("unexpected warnings {warnings:?}"),
+    }
+    assert!(red(&built.mosaic).credit().is_none());
+    assert!(blue(&built.mosaic).credit().is_none());
+}
+
+#[test]
+fn no_credits_file_gives_no_warning() {
+    let fixture = Fixture::new();
+
+    let built = build_red_and_blue(&fixture);
+
+    assert_eq!(built.report.warnings, []);
+}
