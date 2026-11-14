@@ -217,6 +217,38 @@ fn every_field_is_escaped_for_markdown_with_its_whitespace_collapsed() {
 }
 
 #[test]
+fn entities_line_starts_and_images_are_escaped_but_plain_ampersands_and_full_stops_are_not() {
+    let fixture = Fixture::new();
+    add_target_image_credits_file(
+        &fixture,
+        b"path,artist,title\ntarget.png,1. Not a list,Fish &amp; Chips\n",
+    );
+    let mosaic = one_tile_each(
+        &fixture,
+        &["a.png", "b.png", "c.png", "d.png", "e.png"],
+        b"path,artist,title,date,collection\n\
+          a.png,# Not a heading,&#38; &#x26; &copy; kept,1998.192,No. 5\n\
+          b.png,- Not a list,Adolphe Braun & Co.,1. 2,a & b; c\n\
+          c.png,+ Not a list,Look![x](y),2),3.\n\
+          d.png,12) Not a list,Wow! [x],12.5,10 1)\n\
+          e.png,#1,-1,+,1.\n",
+    );
+
+    assert_eq!(
+        target_image_line(&mosaic),
+        "1\\. Not a list, *Fish \\&amp; Chips*"
+    );
+    assert_eq!(
+        source_image_rows(&mosaic),
+        "| \\# Not a heading | \\&#38; \\&#x26; \\&copy; kept | 1998.192 | No. 5 | 1 |\n\
+         | \\#1 | \\-1 | \\+ | 1\\. | 1 |\n\
+         | \\+ Not a list | Look\\!\\[x\\](y) | 2\\) | 3\\. | 1 |\n\
+         | \\- Not a list | Adolphe Braun & Co. | 1\\. 2 | a & b; c | 1 |\n\
+         | 12\\) Not a list | Wow! \\[x\\] | 12.5 | 10 1) | 1 |\n"
+    );
+}
+
+#[test]
 fn the_without_a_credit_section_is_left_out_when_every_source_image_has_a_credit() {
     let fixture = Fixture::new();
     fixture.add_file(

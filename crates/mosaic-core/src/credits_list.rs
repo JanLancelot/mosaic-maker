@@ -109,19 +109,49 @@ fn collapsed(field: &str) -> String {
 }
 
 /// `field` as Markdown text that shows as written, on one line and inside a table: its
-/// whitespace collapsed and its characters that mean something in Markdown escaped.
+/// whitespace collapsed and its characters that mean something in Markdown escaped. A `&` is
+/// escaped only where it starts an entity, a `!` only before a bracket, and the field's start
+/// only where it would begin a heading or list, so ordinary text such as "Braun & Co." stays as
+/// written.
 fn text(field: &str) -> String {
+    let field = collapsed(field);
+    let marker = block_marker(&field);
     let mut text = String::new();
-    for character in collapsed(field).chars() {
-        if matches!(
-            character,
-            '\\' | '`' | '*' | '_' | '[' | ']' | '<' | '>' | '|' | '~'
-        ) {
+    for (at, character) in field.char_indices() {
+        let rest = &field[at..];
+        let escape = match character {
+            '\\' | '`' | '*' | '_' | '[' | ']' | '<' | '>' | '|' | '~' => true,
+            '&' => starts_entity(rest),
+            '!' => rest[1..].starts_with('['),
+            _ => marker == Some(at),
+        };
+        if escape {
             text.push('\\');
         }
         text.push(character);
     }
     text
+}
+
+/// Where the character is that would make `field`, at the start of a line, begin a heading or
+/// a list: a leading `#`, `-` or `+`, or the `.` or `)` after leading digits that ends an
+/// ordered list's number.
+fn block_marker(field: &str) -> Option<usize> {
+    if field.starts_with(['#', '-', '+']) {
+        return Some(0);
+    }
+    let digits = field.bytes().take_while(u8::is_ascii_digit).count();
+    let after = field[digits..].strip_prefix(['.', ')'])?;
+    let ends_number = after.is_empty() || after.starts_with(' ');
+    ((1..=9).contains(&digits) && ends_number).then_some(digits)
+}
+
+/// Whether `rest`, which starts with `&`, starts with an entity such as `&amp;` or `&#38;`.
+fn starts_entity(rest: &str) -> bool {
+    let name = &rest[1..];
+    let name = name.strip_prefix('#').unwrap_or(name);
+    let length = name.bytes().take_while(u8::is_ascii_alphanumeric).count();
+    length > 0 && name[length..].starts_with(';')
 }
 
 /// `web_link` as a Markdown link destination, with the characters that would end it, or a
