@@ -11,7 +11,8 @@ use crate::assign::{self, Assignment};
 use crate::cache::AnalysisCache;
 use crate::cancel::CancelToken;
 use crate::color_signature::ColorSignature;
-use crate::mosaic::{Mosaic, RENDERED_TILE_SIZE, SourceImage, Tile};
+use crate::credits_files::CreditsFiles;
+use crate::mosaic::{Mosaic, RENDERED_TILE_SIZE, SourceImage, SourceImageId, TargetImage, Tile};
 use crate::scan;
 use crate::warning::{BuildReport, BuildStats, BuildWarning};
 
@@ -151,10 +152,17 @@ pub fn build(
 
     let cache = &cache.kept_out_of(source_library);
     let mut warnings = Vec::new();
-    let analysed = analyse_source_library(source_library, cache, &mut warnings, &mut reporter)?;
+    let mut files =
+        scan::files_in(source_library, &mut warnings).map_err(BuildError::SourceLibrary)?;
+    let credits_files = CreditsFiles::read(target_image, source_library, &mut files, &mut warnings);
+    let AnalysedLibrary {
+        analysed,
+        identified_paths,
+    } = analyse_source_library(source_library, files, cache, &mut warnings, &mut reporter)?;
     if analysed.is_empty() {
         return Err(BuildError::EmptySourceLibrary);
     }
+    let credits = credits_files.source_image_credits(&identified_paths);
 
     let tile_count = grid.tile_count();
     reporter.report(Stage::MatchingTiles, 0, tile_count)?;
@@ -229,13 +237,21 @@ pub fn build(
         .iter()
         .zip(thumbnails_and_rendered)
         .map(|(analysed, (thumbnail, _))| {
-            SourceImage::new(analysed.id, analysed.last_known_path.clone(), thumbnail)
+            SourceImage::new(
+                analysed.id,
+                analysed.last_known_path.clone(),
+                thumbnail,
+                credits.get(&analysed.id).cloned(),
+            )
         })
         .collect();
 
     let absolute = |path: &Path| std::path::absolute(path).unwrap_or_else(|_| path.to_owned());
     let mosaic = Mosaic::new(
-        absolute(target_image),
+        TargetImage {
+            path: absolute(target_image),
+            credit: credits_files.target_image_credit().cloned(),
+        },
         absolute(source_library),
         settings.clone(),
         grid.rows,
@@ -265,18 +281,26 @@ fn open_image(path: &Path) -> Result<RgbImage, image::ImageError> {
     ))
 }
 
-/// Analyses every decodable image in `source_library` and its subfolders, reusing what
-/// `cache` holds. Source Images come in path order, so builds are repeatable however the
-/// parallel work interleaves. Byte-identical files are one Source Image, last seen at the
-/// first path. Files that can't be Source Images are skipped with a warning.
+/// What a build finds in its Source Library.
+struct AnalysedLibrary {
+    /// Every Source Image, in path order.
+    analysed: Vec<AnalysedSourceImage>,
+    /// Every path holding a Source Image, in path order, with its identity.
+    identified_paths: Vec<(PathBuf, SourceImageId)>,
+}
+
+/// Analyses every decodable image among `files`, the files in `source_library` and its
+/// subfolders in path order, reusing what `cache` holds. Source Images come in path order, so
+/// builds are repeatable however the parallel work interleaves. Byte-identical files are one
+/// Source Image, last seen at the first path. Files that can't be Source Images are skipped
+/// with a warning.
 fn analyse_source_library(
     source_library: &Path,
+    files: Vec<PathBuf>,
     cache: &AnalysisCache,
     warnings: &mut Vec<BuildWarning>,
     reporter: &mut Reporter<'_, impl FnMut(Progress)>,
-) -> Result<Vec<AnalysedSourceImage>, BuildError> {
-    let files = scan::files_in(source_library, warnings).map_err(BuildError::SourceLibrary)?;
-
+) -> Result<AnalysedLibrary, BuildError> {
     let total = files.len();
     let outcomes = in_parallel(
         &files,
@@ -286,10 +310,12 @@ fn analyse_source_library(
     )?;
 
     let mut analysed: Vec<AnalysedSourceImage> = Vec::with_capacity(total);
+    let mut identified_paths = Vec::with_capacity(total);
     let mut seen = HashSet::new();
     for (relative_path, outcome) in files.into_iter().zip(outcomes) {
         match outcome {
             Ok(source_image) => {
+                identified_paths.push((relative_path, source_image.id));
                 if seen.insert(source_image.id) {
                     analysed.push(source_image);
                 }
@@ -300,7 +326,10 @@ fn analyse_source_library(
             }),
         }
     }
-    Ok(analysed)
+    Ok(AnalysedLibrary {
+        analysed,
+        identified_paths,
+    })
 }
 
 /// Runs `work` on every one of `items` across all cores, returning the results in the same

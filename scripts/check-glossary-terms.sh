@@ -16,7 +16,13 @@ exempt='result|hash|average color'
 # regex. It is removed from a matching line before the line is checked again.
 #   Command::output: runs a process and captures what it printed (std).
 #   FileDialog::save_file: asks where to save a file (rfd).
-exempt_code='Command::output|\.output\(\)|\.save_file\(\)'
+#   needs-info: a triage label (AGENTS.md).
+#   CARGO_MANIFEST_DIR: the folder of a crate's Cargo manifest (Cargo).
+#   manifest.json, manifest_json, Manifest, MANIFEST and the manifest() method: a Mosaic
+#     File's manifest and the persist module's names for it.
+exempt_code='Command::output|\.output\(\)|\.save_file\(\)|needs-info'
+exempt_code="$exempt_code"'|CARGO_MANIFEST_DIR|manifest[._]json|self\.manifest\(\)|fn manifest\(&self\)'
+exempt_code="$exempt_code"'|(^|[^A-Za-z0-9_])(Manifest|MANIFEST)([^A-Za-z0-9_]|$)'
 
 # One "avoided<TAB>Glossary Term" line per avoided term.
 pairs=$(awk '

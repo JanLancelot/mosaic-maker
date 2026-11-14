@@ -117,6 +117,47 @@ fn a_screenshot_is_saved_with_a_tile_pinned() {
     save_screenshot(&mut harness, "tile-pinned.png");
 }
 
+#[test]
+fn a_pinned_tile_shows_its_source_images_credit() {
+    let fixture = Fixture::new();
+    std::fs::write(
+        fixture.source_library().join("credits.csv"),
+        "path,artist,title,date,collection,link\n\
+         blue.png,Katsushika Hokusai,Under the Wave off Kanagawa,ca. 1830–32,\
+         The Metropolitan Museum of Art,https://www.metmuseum.org/art/collection/search/45434\n",
+    )
+    .unwrap();
+    let mut harness = fixture.built_app();
+
+    click_tile(&mut harness, Tile { column: 4, row: 1 });
+    run_until(&mut harness, "the Original", |harness| {
+        harness.query_by_label("Loading the Original…").is_none()
+    });
+
+    harness.get_by_role_and_label(egui::Role::Link, "Under the Wave off Kanagawa");
+    harness.get_by_label("Katsushika Hokusai");
+    save_screenshot(&mut harness, "tile-pinned-credit.png");
+}
+
+#[test]
+fn the_credits_files_problems_are_shown_with_the_build_report() {
+    let fixture = Fixture::new();
+    std::fs::write(
+        fixture.source_library().join("credits.csv"),
+        "path,title\nblue.png,Blue\nmissing.png,Gone\n",
+    )
+    .unwrap();
+    let mut harness = fixture.built_app();
+
+    harness
+        .get_by_label("1 Credits File problem")
+        .click_accesskit();
+    harness.run();
+
+    harness.get_by_label_contains("aren't in the Source Library: missing.png");
+    save_screenshot(&mut harness, "credits-file-problems.png");
+}
+
 fn save_screenshot(harness: &mut Harness<'_, MosaicMakerApp>, file_name: &str) {
     let screenshot = harness.render().expect("the window renders");
     std::fs::create_dir_all(screenshots_folder()).unwrap();

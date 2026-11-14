@@ -7,6 +7,7 @@ use image::imageops::{self, FilterType};
 
 use crate::analysis;
 use crate::build::BuildSettings;
+use crate::credit::Credit;
 
 /// Side length, in pixels, of one Tile in a Mosaic's rendered image.
 pub const RENDERED_TILE_SIZE: u32 = 32;
@@ -60,6 +61,7 @@ pub struct SourceImage {
     id: SourceImageId,
     last_known_path: PathBuf,
     thumbnail: RgbImage,
+    credit: Option<Credit>,
 }
 
 impl fmt::Debug for SourceImage {
@@ -68,16 +70,23 @@ impl fmt::Debug for SourceImage {
         f.debug_struct("SourceImage")
             .field("id", &self.id)
             .field("last_known_path", &self.last_known_path)
+            .field("credit", &self.credit)
             .finish_non_exhaustive()
     }
 }
 
 impl SourceImage {
-    pub(crate) fn new(id: SourceImageId, last_known_path: PathBuf, thumbnail: RgbImage) -> Self {
+    pub(crate) fn new(
+        id: SourceImageId,
+        last_known_path: PathBuf,
+        thumbnail: RgbImage,
+        credit: Option<Credit>,
+    ) -> Self {
         Self {
             id,
             last_known_path,
             thumbnail,
+            credit,
         }
     }
 
@@ -95,6 +104,11 @@ impl SourceImage {
         &self.thumbnail
     }
 
+    /// Who made the Source Image and where it comes from, if its Credits File says.
+    pub fn credit(&self) -> Option<&Credit> {
+        self.credit.as_ref()
+    }
+
     /// The name of the Source Image's file, for showing to the user.
     pub fn file_name(&self) -> Cow<'_, str> {
         self.last_known_path
@@ -104,11 +118,18 @@ impl SourceImage {
     }
 }
 
+/// The picture a Mosaic recreates: where it was, and its Credit if it has one.
+#[derive(Debug, Clone)]
+pub(crate) struct TargetImage {
+    /// An absolute path.
+    pub(crate) path: PathBuf,
+    pub(crate) credit: Option<Credit>,
+}
+
 /// A grid of Tiles that recreates a Target Image, each Tile filled by one Source Image.
 #[derive(Debug, Clone)]
 pub struct Mosaic {
-    /// The Target Image the Mosaic recreates, as an absolute path.
-    target_image: PathBuf,
+    target_image: TargetImage,
     /// The Source Library the Mosaic was built from, as an absolute path.
     source_library: PathBuf,
     settings: BuildSettings,
@@ -121,7 +142,7 @@ pub struct Mosaic {
 
 impl Mosaic {
     pub(crate) fn new(
-        target_image: PathBuf,
+        target_image: TargetImage,
         source_library: PathBuf,
         settings: BuildSettings,
         rows: u32,
@@ -146,7 +167,13 @@ impl Mosaic {
 
     /// The Target Image the Mosaic recreates, as an absolute path.
     pub fn target_image(&self) -> &Path {
-        &self.target_image
+        &self.target_image.path
+    }
+
+    /// Who made the Target Image and where it comes from, if the Credits File beside it said
+    /// when the Mosaic was built.
+    pub fn target_image_credit(&self) -> Option<&Credit> {
+        self.target_image.credit.as_ref()
     }
 
     /// The Source Library the Mosaic was built from, as an absolute path.

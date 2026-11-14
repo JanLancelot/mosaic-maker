@@ -76,6 +76,53 @@ fn built_session(fixture: &Fixture) -> (Session, QueuedRunner) {
 }
 
 #[test]
+fn saving_a_credits_list_writes_the_shown_mosaics_credits_list() {
+    let fixture = Fixture::new();
+    let (mut session, runner) = session(&fixture);
+    session.build(MAX_TEXTURE_SIDE).unwrap();
+    runner.run_all();
+    let shown = session.poll().expect("the built Mosaic is newly shown");
+    let path = fixture.path("target-credits.md");
+
+    session.save_credits_list(path.clone()).unwrap();
+    assert_eq!(
+        session.running(),
+        Some(&Operation::SaveCreditsList(path.clone()))
+    );
+    runner.run_all();
+    assert!(session.poll().is_none(), "the shown Mosaic stays");
+
+    assert_eq!(
+        session.outcome(),
+        Some(&Outcome::SavedCreditsList(path.clone()))
+    );
+    assert_eq!(
+        std::fs::read_to_string(path).unwrap(),
+        shown.mosaic.credits_list()
+    );
+}
+
+#[test]
+fn a_credits_list_that_cannot_be_written_ends_failed() {
+    let fixture = Fixture::new();
+    let (mut session, runner) = built_session(&fixture);
+    let path = fixture.path("missing folder/target-credits.md");
+
+    session.save_credits_list(path.clone()).unwrap();
+    runner.run_all();
+    session.poll();
+
+    assert!(
+        matches!(
+            session.outcome(),
+            Some(Outcome::Failed(Operation::SaveCreditsList(failed), _)) if *failed == path
+        ),
+        "expected a failed Save Credits List, got {:?}",
+        session.outcome()
+    );
+}
+
+#[test]
 fn a_build_cancelled_before_it_runs_ends_cancelled_and_the_earlier_mosaic_stays_shown() {
     let fixture = Fixture::new();
     let (mut session, runner) = built_session(&fixture);
@@ -128,6 +175,10 @@ fn saving_or_exporting_with_no_mosaic_shown_is_refused() {
     );
     assert_eq!(
         session.export(fixture.path("stripes.png"), 16),
+        Err(Refused::NothingShown)
+    );
+    assert_eq!(
+        session.save_credits_list(fixture.path("stripes-credits.md")),
         Err(Refused::NothingShown)
     );
     assert!(session.running().is_none());
@@ -204,6 +255,10 @@ fn starting_anything_while_an_operation_runs_is_refused_as_busy() {
     );
     assert_eq!(
         session.export(fixture.path("stripes.png"), 16),
+        Err(Refused::Busy)
+    );
+    assert_eq!(
+        session.save_credits_list(fixture.path("stripes-credits.md")),
         Err(Refused::Busy)
     );
     assert_eq!(

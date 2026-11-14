@@ -14,9 +14,9 @@ use std::sync::Arc;
 use eframe::egui;
 use image::RgbImage;
 use mosaic_core::{
-    AnalysisCache, BuildReport, BuildSettings, BuildStats, DEFAULT_REPEAT_RADIUS, ExportReport,
-    Mosaic, Progress, RENDERED_TILE_SIZE, ScreenPoint, ScreenRect, SourceImage, SourceImageId,
-    Stage, Tile, Viewport,
+    AnalysisCache, BuildReport, BuildSettings, BuildStats, Credit, DEFAULT_REPEAT_RADIUS,
+    ExportReport, Mosaic, Progress, RENDERED_TILE_SIZE, ScreenPoint, ScreenRect, SourceImage,
+    SourceImageId, Stage, Tile, Viewport,
 };
 
 use session::{
@@ -223,7 +223,7 @@ impl MosaicMakerApp {
                     .clicked()
                     && let Some(path) = rfd::FileDialog::new()
                         .add_filter("Mosaic", &["mosaic"])
-                        .set_file_name(self.suggested_file_name("mosaic"))
+                        .set_file_name(self.suggested_file_name(".mosaic"))
                         .save_file()
                 {
                     let _ = self.session.save(path);
@@ -234,6 +234,16 @@ impl MosaicMakerApp {
                     .clicked()
                 {
                     self.export_dialog_open = true;
+                }
+                if ui
+                    .add_enabled(saveable, egui::Button::new("Save Credits List…"))
+                    .clicked()
+                    && let Some(path) = rfd::FileDialog::new()
+                        .add_filter("Markdown", &["md"])
+                        .set_file_name(self.suggested_file_name("-credits.md"))
+                        .save_file()
+                {
+                    let _ = self.session.save_credits_list(path);
                 }
             });
         });
@@ -268,7 +278,7 @@ impl MosaicMakerApp {
         if export
             && let Some(path) = rfd::FileDialog::new()
                 .add_filter("PNG", &["png"])
-                .set_file_name(self.suggested_file_name("png"))
+                .set_file_name(self.suggested_file_name(".png"))
                 .save_file()
         {
             // Export PNG is only offered while the Session would accept it.
@@ -276,15 +286,15 @@ impl MosaicMakerApp {
         }
     }
 
-    /// A file name for saving or exporting the shown Mosaic: its Target Image's, with
-    /// `extension`.
-    fn suggested_file_name(&self, extension: &str) -> String {
+    /// A file name for saving or exporting the shown Mosaic: its Target Image's, ending in
+    /// `suffix` in place of its extension.
+    fn suggested_file_name(&self, suffix: &str) -> String {
         let stem = self
             .shown
             .as_ref()
             .and_then(|shown| shown.mosaic.target_image().file_stem())
             .map_or_else(|| "Mosaic".into(), |stem| stem.to_string_lossy());
-        format!("{stem}.{extension}")
+        format!("{stem}{suffix}")
     }
 
     fn setup_panel(&mut self, ui: &mut egui::Ui) {
@@ -406,12 +416,17 @@ fn status(outcome: &Outcome) -> Option<String> {
         Outcome::Saved(path) => format!("Saved to {}.", path.display()),
         Outcome::Opened(path) => format!("Opened {}.", path.display()),
         Outcome::Exported(path, _) => format!("Exported to {}.", path.display()),
+        Outcome::SavedCreditsList(path) => format!("Saved the Credits List to {}.", path.display()),
         Outcome::Cancelled => "Build cancelled.".to_owned(),
         Outcome::Failed(operation, reason) => match operation {
             Operation::Build => format!("Build failed: {reason}."),
             Operation::Open(path) => format!("Couldn't open {}: {reason}.", path.display()),
             Operation::Save(path) => format!("Couldn't save {}: {reason}.", path.display()),
             Operation::Export(path) => format!("Couldn't export {}: {reason}.", path.display()),
+            Operation::SaveCreditsList(path) => format!(
+                "Couldn't save the Credits List to {}: {reason}.",
+                path.display()
+            ),
         },
         Outcome::Crashed(Operation::Build) => {
             "Build failed: the build stopped unexpectedly.".to_owned()
@@ -547,7 +562,8 @@ impl ShownMosaic {
         }
     }
 
-    /// The pinned Source Image: its Original, where that lives, and how much it is used.
+    /// The pinned Source Image: its Original, its Credit, where it lives, and how much it is
+    /// used.
     fn inspector(&mut self, ui: &mut egui::Ui) {
         let Some(pinned) = &mut self.pinned else {
             return;
@@ -556,7 +572,7 @@ impl ShownMosaic {
 
         ui.heading("Source Image");
         ui.add_space(8.0);
-        let (shown, caption) = match &pinned.original {
+        let (shown, note) = match &pinned.original {
             Original::Shown(texture) => (texture.clone(), None),
             Original::Loading(_) => (
                 self.thumbnails.texture(ui.ctx(), source_image),
@@ -569,8 +585,12 @@ impl ShownMosaic {
         };
         let side = ui.available_width();
         ui.add(egui::Image::new(&shown).max_size(egui::vec2(side, side)));
-        if let Some(caption) = caption {
-            ui.weak(caption);
+        if let Some(note) = note {
+            ui.weak(note);
+        }
+        if let Some(credit) = source_image.credit() {
+            ui.add_space(8.0);
+            show_credit(ui, credit);
         }
         ui.add_space(8.0);
 
@@ -602,6 +622,24 @@ impl ShownMosaic {
         }
         ui.add_space(8.0);
         ui.weak("Press Escape or click empty space to unpin.");
+    }
+}
+
+/// The shown title of `credit`, linked to its web link if it has one, then each other field
+/// that is known on its own line.
+fn show_credit(ui: &mut egui::Ui, credit: &Credit) {
+    if let Some(title) = credit.shown_title() {
+        // Strong text has its own color, which would hide a link's, so only a plain title is strong.
+        match credit.web_link() {
+            Some(web_link) => ui.hyperlink_to(title, web_link),
+            None => ui.strong(title),
+        };
+    }
+    for field in [credit.artist(), credit.date(), credit.collection()]
+        .into_iter()
+        .flatten()
+    {
+        ui.label(field);
     }
 }
 
@@ -764,6 +802,24 @@ fn show_build_report(ui: &mut egui::Ui, report: &BuildReport) {
                 .max_height(200.0)
                 .show(ui, |ui| {
                     for warning in skipped {
+                        ui.label(warning.to_string());
+                    }
+                });
+        });
+    }
+
+    let credits_file_problems: Vec<_> = report.credits_file_problems().collect();
+    let heading = match credits_file_problems.len() {
+        0 => None,
+        1 => Some("1 Credits File problem".to_owned()),
+        count => Some(format!("{count} Credits File problems")),
+    };
+    if let Some(heading) = heading {
+        ui.collapsing(heading, |ui| {
+            egui::ScrollArea::vertical()
+                .max_height(200.0)
+                .show(ui, |ui| {
+                    for warning in credits_file_problems {
                         ui.label(warning.to_string());
                     }
                 });
