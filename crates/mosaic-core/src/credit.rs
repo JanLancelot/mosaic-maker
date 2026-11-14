@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use std::io;
 use std::path::{Component, Path, PathBuf};
 
-use crate::warning::{BuildWarning, CreditsFileError};
+use crate::warning::{BuildWarning, CreditsFileError, CreditsFileOf};
 
 /// The name of a Credits File.
 pub(crate) const CREDITS_FILE_NAME: &str = "credits.csv";
@@ -87,10 +87,14 @@ pub(crate) struct Credits {
 }
 
 impl Credits {
-    /// Reads the Credits File at `path`. A missing file gives no Credits. One that can't be
-    /// read or parsed gives none either, with a warning. A path listed in more than one row
-    /// takes its first row's Credit, with a warning.
-    pub(crate) fn read(path: &Path, warnings: &mut Vec<BuildWarning>) -> Self {
+    /// Reads `credits_file`, found at `path`. A missing file gives no Credits. One that can't
+    /// be read or parsed gives none either, with a warning. A path listed in more than one
+    /// row takes its first row's Credit, with a warning.
+    pub(crate) fn read(
+        path: &Path,
+        credits_file: CreditsFileOf,
+        warnings: &mut Vec<BuildWarning>,
+    ) -> Self {
         let parsed = match std::fs::read(path) {
             Ok(contents) => Self::parse(&contents),
             Err(error) if error.kind() == io::ErrorKind::NotFound => return Self::default(),
@@ -98,17 +102,16 @@ impl Credits {
         };
         match parsed {
             Ok((credits, duplicated_paths)) => {
-                warnings.extend(duplicated_paths.into_iter().map(|duplicated| {
-                    BuildWarning::DuplicateCreditsPath {
-                        credits_file: path.to_owned(),
-                        path: duplicated,
-                    }
-                }));
+                warnings.extend(
+                    duplicated_paths
+                        .into_iter()
+                        .map(|path| BuildWarning::DuplicateCreditsPath { credits_file, path }),
+                );
                 credits
             }
             Err(reason) => {
                 warnings.push(BuildWarning::UnreadableCreditsFile {
-                    credits_file: path.to_owned(),
+                    credits_file,
                     reason,
                 });
                 Self::default()

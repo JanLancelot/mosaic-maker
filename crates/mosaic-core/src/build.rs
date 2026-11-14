@@ -14,7 +14,7 @@ use crate::color_signature::ColorSignature;
 use crate::credit::{CREDITS_FILE_NAME, Credit, Credits};
 use crate::mosaic::{Mosaic, RENDERED_TILE_SIZE, SourceImage, SourceImageId, Tile};
 use crate::scan;
-use crate::warning::{BuildReport, BuildStats, BuildWarning};
+use crate::warning::{BuildReport, BuildStats, BuildWarning, CreditsFileOf};
 
 /// The Repeat Radius a new build starts with.
 pub const DEFAULT_REPEAT_RADIUS: u32 = 3;
@@ -298,15 +298,15 @@ fn analyse_source_library(
         .position(|path| path == Path::new(CREDITS_FILE_NAME))
         .map(|index| files.remove(index));
     let credits_by_path = match credits_file {
-        Some(credits_file) => {
-            let credits_file = source_library.join(credits_file);
-            let credits = Credits::read(&credits_file, warnings);
+        Some(path) => {
+            let credits = Credits::read(
+                &source_library.join(path),
+                CreditsFileOf::SourceLibrary,
+                warnings,
+            );
             let paths = credits.paths_naming_none_of(&files);
             if !paths.is_empty() {
-                warnings.push(BuildWarning::UnknownCreditsPaths {
-                    credits_file,
-                    paths,
-                });
+                warnings.push(BuildWarning::UnknownCreditsPaths { paths });
             }
             credits
         }

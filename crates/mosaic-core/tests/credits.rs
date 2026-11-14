@@ -3,12 +3,13 @@
 
 mod common;
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use common::{BLUE, Fixture, RED, solid, striped_mosaic_with, tiles};
 use image::{Rgb, RgbImage};
 use mosaic_core::{
-    BuildSettings, BuildWarning, Built, CreditsFileError, Mosaic, SourceImage, SourceImageId, Tile,
+    BuildSettings, BuildWarning, Built, CreditsFileError, CreditsFileOf, Mosaic, SourceImage,
+    SourceImageId, Tile,
 };
 
 /// A 2 × 1 Mosaic whose left Tile is filled from `red.png` and right Tile from `blue.png`.
@@ -23,11 +24,6 @@ fn build_red_and_blue(fixture: &Fixture) -> Built {
     let target = RgbImage::from_fn(20, 10, |x, _| if x < 10 { RED } else { BLUE });
     let target_image = fixture.set_target_image(&target);
     fixture.build_reporting(&target_image, 2)
-}
-
-/// Where the fixture's Credits File is.
-fn credits_file(fixture: &Fixture) -> PathBuf {
-    fixture.source_library().join("credits.csv")
 }
 
 fn red(mosaic: &Mosaic) -> &SourceImage {
@@ -255,7 +251,7 @@ fn a_credits_file_with_no_path_column_is_reported_and_the_build_goes_on_without_
     assert_eq!(
         built.report.warnings,
         [BuildWarning::UnreadableCreditsFile {
-            credits_file: credits_file(&fixture),
+            credits_file: CreditsFileOf::SourceLibrary,
             reason: CreditsFileError::NoPathColumn,
         }]
     );
@@ -276,13 +272,10 @@ fn an_unparseable_credits_file_is_reported_with_its_reason_and_none_of_its_credi
     match &built.report.warnings[..] {
         [
             BuildWarning::UnreadableCreditsFile {
-                credits_file: path,
+                credits_file: CreditsFileOf::SourceLibrary,
                 reason: CreditsFileError::Unparseable(reason),
             },
-        ] => {
-            assert_eq!(*path, credits_file(&fixture));
-            assert!(reason.contains("UTF-8"), "{reason}");
-        }
+        ] => assert!(reason.contains("UTF-8"), "{reason}"),
         warnings => panic!("unexpected warnings {warnings:?}"),
     }
     assert!(red(&built.mosaic).credit().is_none());
@@ -306,7 +299,6 @@ fn rows_naming_no_file_in_the_source_library_are_listed_in_one_warning() {
     assert_eq!(
         built.report.warnings,
         [BuildWarning::UnknownCreditsPaths {
-            credits_file: credits_file(&fixture),
             paths: vec!["Red.png".to_owned(), "prints/blue.png".to_owned()],
         }]
     );
@@ -335,11 +327,11 @@ fn a_path_listed_more_than_once_is_warned_about_once_and_its_first_row_is_used()
         built.report.warnings,
         [
             BuildWarning::DuplicateCreditsPath {
-                credits_file: credits_file(&fixture),
+                credits_file: CreditsFileOf::SourceLibrary,
                 path: "red.png".to_owned(),
             },
             BuildWarning::DuplicateCreditsPath {
-                credits_file: credits_file(&fixture),
+                credits_file: CreditsFileOf::SourceLibrary,
                 path: "blue.png".to_owned(),
             },
         ]
