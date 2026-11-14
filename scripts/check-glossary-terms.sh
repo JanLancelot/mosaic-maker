@@ -10,13 +10,16 @@ tab=$(printf '\t')
 #   result: Rust's Result type.
 #   hash: Source Image identity is a content hash (ADR 0003).
 #   average color: a Color Signature is built from the average colors of its parts.
-exempt='result|hash|average color'
+#   manifest: a Mosaic File's manifest.json, and Cargo's manifest.
+#   caption: the line shown under an Original that is unreachable.
+exempt='result|hash|average color|manifest|caption'
 
 # Code we don't name that happens to contain an avoided term, as one extended
 # regex. It is removed from a matching line before the line is checked again.
 #   Command::output: runs a process and captures what it printed (std).
 #   FileDialog::save_file: asks where to save a file (rfd).
-exempt_code='Command::output|\.output\(\)|\.save_file\(\)'
+#   needs-info: a triage label (AGENTS.md).
+exempt_code='Command::output|\.output\(\)|\.save_file\(\)|needs-info'
 
 # One "avoided<TAB>Glossary Term" line per avoided term.
 pairs=$(awk '

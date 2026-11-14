@@ -12,6 +12,18 @@ _Avoid_: Input image, base image
 One picture from the Source Library that can fill Tiles in a Mosaic. It is identified by its contents, not its file location, so the same picture stored twice is one Source Image. It always appears unaltered (cropped, never tinted).
 _Avoid_: Reference image, tile image, photo
 
+**Credit**:
+Who made a Source Image or the Target Image and where it comes from: its artist, title, date, collection and link, any of which may be unknown.
+_Avoid_: Metadata, attribution, caption, info
+
+**Credits File**:
+A `credits.csv` file that gives the Credits of pictures in its folder and below. The one at the root of a Source Library credits its Source Images; the one beside the Target Image credits it.
+_Avoid_: Metadata file, sidecar, manifest
+
+**Credits List**:
+The list of a Mosaic's Target Image and Source Images with their Credits, and how many Tiles each Source Image fills.
+_Avoid_: Credits export, attribution sheet
+
 **Original**:
 The file holding a Source Image, at the place in the Source Library where it was last found. Once that file is moved, renamed, edited or deleted, the Original is unreachable.
 _Avoid_: Full-resolution image
