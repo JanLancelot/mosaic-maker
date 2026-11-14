@@ -183,3 +183,35 @@ fn a_target_image_link_without_a_title_stands_in_for_it() {
         "Katsushika Hokusai, [*https://example.org/wave*](https://example.org/wave)"
     );
 }
+
+#[test]
+fn every_field_is_escaped_for_markdown_with_its_whitespace_collapsed() {
+    let fixture = Fixture::new();
+    add_target_image_credits_file(
+        &fixture,
+        b"path,artist,title,date,link\n\
+          target.png,Hokusai | Studio,The *Great*  Wave,\"c.\n\t1831\",https://example.org/wave_(1)|2\n",
+    );
+    let mosaic = one_tile_each(
+        &fixture,
+        &["a.png", "no_credit [copy].png"],
+        b"path,artist,title,collection\n\
+          a.png,<b>Smith</b>   & Jones,`Code` _under_ [x](y) ~s~ back\\slash,A | B\n",
+    );
+
+    let list = mosaic.credits_list();
+
+    assert_eq!(
+        target_image_line(&mosaic),
+        "Hokusai \\| Studio, [*The \\*Great\\* Wave*](https://example.org/wave_%281%29%7C2), c. 1831"
+    );
+    assert_eq!(
+        source_image_rows(&mosaic),
+        "| \\<b\\>Smith\\</b\\> & Jones \
+         | \\`Code\\` \\_under\\_ \\[x\\](y) \\~s\\~ back\\\\slash |  | A \\| B | 1 |\n"
+    );
+    assert!(
+        list.ends_with("| File | Tiles |\n| --- | ---: |\n| no\\_credit \\[copy\\].png | 1 |\n"),
+        "{list}"
+    );
+}
