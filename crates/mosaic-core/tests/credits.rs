@@ -1,5 +1,5 @@
 //! Build reads the Credits File at the root of the Source Library and attaches each Credit
-//! to its Source Image.
+//! to its Source Image, and reads the one beside the Target Image for its Credit.
 
 mod common;
 
@@ -411,6 +411,33 @@ fn the_target_image_takes_the_credit_of_its_row_in_the_credits_file_beside_it() 
     assert_eq!(credit.link(), Some("https://example.org/wave"));
     assert_eq!(built.report.warnings, []);
     assert!(red(&built.mosaic).credit().is_none());
+}
+
+#[test]
+fn an_unusable_credits_file_beside_the_target_image_is_reported_and_gives_it_no_credit() {
+    let fixture = Fixture::new();
+    add_target_image_credits_file(&fixture, b"file,title\ntarget.png,The Great Wave\n");
+
+    let built = build_red_and_blue(&fixture);
+
+    assert_eq!(
+        built.report.warnings,
+        [BuildWarning::UnreadableCreditsFile {
+            credits_file: CreditsFileOf::TargetImage,
+            reason: CreditsFileError::NoPathColumn,
+        }]
+    );
+    assert!(built.mosaic.target_image_credit().is_none());
+}
+
+#[test]
+fn a_target_image_with_no_credits_file_beside_it_has_no_credit_and_no_warning() {
+    let fixture = Fixture::new();
+
+    let built = build_red_and_blue(&fixture);
+
+    assert!(built.mosaic.target_image_credit().is_none());
+    assert_eq!(built.report.warnings, []);
 }
 
 /// Like `build_red_and_blue`, with the Target Image saved at `file_name` in the root of the
