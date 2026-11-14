@@ -14,9 +14,9 @@ use std::sync::Arc;
 use eframe::egui;
 use image::RgbImage;
 use mosaic_core::{
-    AnalysisCache, BuildReport, BuildSettings, BuildStats, DEFAULT_REPEAT_RADIUS, ExportReport,
-    Mosaic, Progress, RENDERED_TILE_SIZE, ScreenPoint, ScreenRect, SourceImage, SourceImageId,
-    Stage, Tile, Viewport,
+    AnalysisCache, BuildReport, BuildSettings, BuildStats, Credit, DEFAULT_REPEAT_RADIUS,
+    ExportReport, Mosaic, Progress, RENDERED_TILE_SIZE, ScreenPoint, ScreenRect, SourceImage,
+    SourceImageId, Stage, Tile, Viewport,
 };
 
 use session::{
@@ -547,7 +547,8 @@ impl ShownMosaic {
         }
     }
 
-    /// The pinned Source Image: its Original, where that lives, and how much it is used.
+    /// The pinned Source Image: its Original, its Credit, where it lives, and how much it is
+    /// used.
     fn inspector(&mut self, ui: &mut egui::Ui) {
         let Some(pinned) = &mut self.pinned else {
             return;
@@ -571,6 +572,10 @@ impl ShownMosaic {
         ui.add(egui::Image::new(&shown).max_size(egui::vec2(side, side)));
         if let Some(caption) = caption {
             ui.weak(caption);
+        }
+        if let Some(credit) = source_image.credit() {
+            ui.add_space(8.0);
+            show_credit(ui, credit);
         }
         ui.add_space(8.0);
 
@@ -602,6 +607,24 @@ impl ShownMosaic {
         }
         ui.add_space(8.0);
         ui.weak("Press Escape or click empty space to unpin.");
+    }
+}
+
+/// The title of `credit`, linked to its web link if it has one, then each other field that is
+/// known on its own line. With a link but no title, the link stands in for the title.
+fn show_credit(ui: &mut egui::Ui, credit: &Credit) {
+    if let Some(title) = credit.title().or(credit.link()) {
+        // Strong text has its own color, which would hide a link's, so only a plain title is strong.
+        match credit.web_link() {
+            Some(web_link) => ui.hyperlink_to(title, web_link),
+            None => ui.strong(title),
+        };
+    }
+    for field in [credit.artist(), credit.date(), credit.collection()]
+        .into_iter()
+        .flatten()
+    {
+        ui.label(field);
     }
 }
 
