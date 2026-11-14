@@ -297,9 +297,21 @@ fn analyse_source_library(
         .iter()
         .position(|path| path == Path::new(CREDITS_FILE_NAME))
         .map(|index| files.remove(index));
-    let credits_by_path = credits_file
-        .map(|path| Credits::read(&source_library.join(path), warnings))
-        .unwrap_or_default();
+    let credits_by_path = match credits_file {
+        Some(credits_file) => {
+            let credits_file = source_library.join(credits_file);
+            let credits = Credits::read(&credits_file, warnings);
+            let paths = credits.paths_naming_none_of(&files);
+            if !paths.is_empty() {
+                warnings.push(BuildWarning::UnknownCreditsPaths {
+                    credits_file,
+                    paths,
+                });
+            }
+            credits
+        }
+        None => Credits::default(),
+    };
 
     let total = files.len();
     let outcomes = in_parallel(

@@ -290,6 +290,33 @@ fn an_unparseable_credits_file_is_reported_with_its_reason_and_none_of_its_credi
 }
 
 #[test]
+fn rows_naming_no_file_in_the_source_library_are_listed_in_one_warning() {
+    let fixture = Fixture::new();
+    fixture.add_file(
+        "credits.csv",
+        b"path,title\n\
+          Red.png,Wrong case\n\
+          red.png,Red Fuji\n\
+          prints/blue.png,Moved since\n\
+          blue.png,\n",
+    );
+
+    let built = build_red_and_blue(&fixture);
+
+    assert_eq!(
+        built.report.warnings,
+        [BuildWarning::UnknownCreditsPaths {
+            credits_file: credits_file(&fixture),
+            paths: vec!["Red.png".to_owned(), "prints/blue.png".to_owned()],
+        }]
+    );
+    assert_eq!(
+        red(&built.mosaic).credit().unwrap().title(),
+        Some("Red Fuji")
+    );
+}
+
+#[test]
 fn no_credits_file_gives_no_warning() {
     let fixture = Fixture::new();
 

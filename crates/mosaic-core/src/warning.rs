@@ -42,6 +42,12 @@ pub enum BuildWarning {
         credits_file: PathBuf,
         reason: CreditsFileError,
     },
+    /// Rows of the Source Library's Credits File whose paths, as written there, name no
+    /// file in the Source Library. They are in the order of the file's rows.
+    UnknownCreditsPaths {
+        credits_file: PathBuf,
+        paths: Vec<String>,
+    },
 }
 
 impl fmt::Display for BuildWarning {
@@ -65,6 +71,15 @@ impl fmt::Display for BuildWarning {
                 f,
                 "ignored the Credits File {}: {reason}",
                 credits_file.display()
+            ),
+            BuildWarning::UnknownCreditsPaths {
+                credits_file,
+                paths,
+            } => write!(
+                f,
+                "the Credits File {} names files that aren't in the Source Library: {}",
+                credits_file.display(),
+                paths.join(", ")
             ),
         }
     }

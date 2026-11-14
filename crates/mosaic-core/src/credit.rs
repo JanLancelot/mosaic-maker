@@ -1,6 +1,7 @@
-use std::collections::HashMap;
+use std::collections::hash_map::Entry;
+use std::collections::{HashMap, HashSet};
 use std::io;
-use std::path::{Component, Path};
+use std::path::{Component, Path, PathBuf};
 
 use crate::warning::{BuildWarning, CreditsFileError};
 
@@ -81,6 +82,8 @@ impl Credit {
 pub(crate) struct Credits {
     /// `None` for a path whose row leaves every field blank.
     by_path: HashMap<String, Option<Credit>>,
+    /// Every path the file names, in the order of its rows.
+    paths: Vec<String>,
 }
 
 impl Credits {
@@ -114,6 +117,7 @@ impl Credits {
             ["artist", "title", "date", "collection", "link"].map(column);
 
         let mut by_path = HashMap::new();
+        let mut paths = Vec::new();
         for record in reader.records() {
             let record = record.map_err(unparseable)?;
             let field = |column: Option<usize>| {
@@ -132,14 +136,30 @@ impl Credits {
                 field(collection),
                 field(link),
             );
-            by_path.entry(path).or_insert(credit);
+            if let Entry::Vacant(entry) = by_path.entry(path) {
+                paths.push(entry.key().clone());
+                entry.insert(credit);
+            }
         }
-        Ok(Self { by_path })
+        Ok(Self { by_path, paths })
     }
 
     /// The Credit given for `relative_path`, if any.
     pub(crate) fn of(&self, relative_path: &Path) -> Option<&Credit> {
         self.by_path.get(&slash_path(relative_path)?)?.as_ref()
+    }
+
+    /// The paths the file names that are none of `relative_paths`, in the order of its rows.
+    pub(crate) fn paths_naming_none_of(&self, relative_paths: &[PathBuf]) -> Vec<String> {
+        let named: HashSet<String> = relative_paths
+            .iter()
+            .filter_map(|path| slash_path(path))
+            .collect();
+        self.paths
+            .iter()
+            .filter(|path| !named.contains(*path))
+            .cloned()
+            .collect()
     }
 }
 
