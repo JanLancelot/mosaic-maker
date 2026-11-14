@@ -4,7 +4,7 @@ The Mosaic of Hokusai's *Great Wave* in the README is built entirely from public
 
 ## Target Image
 
-Katsushika Hokusai (Japanese, 1760–1849), *Under the Wave off Kanagawa (Kanagawa oki nami ura), also known as The Great Wave, from the series Thirty-six Views of Mount Fuji (Fugaku sanjūrokkei)*, ca. 1830–32. Woodblock print; ink and color on paper. The Metropolitan Museum of Art, H. O. Havemeyer Collection, Bequest of Mrs. H. O. Havemeyer, 1929, JP1847. [Public domain (CC0)](https://www.metmuseum.org/art/collection/search/45434).
+Katsushika Hokusai (Japanese, 1760–1849), [*Under the Wave off Kanagawa (Kanagawa oki nami ura), also known as The Great Wave, from the series Thirty-six Views of Mount Fuji (Fugaku sanjūrokkei)*](https://www.metmuseum.org/art/collection/search/45434), ca. 1830–32, The Metropolitan Museum of Art, H. O. Havemeyer Collection, Bequest of Mrs. H. O. Havemeyer, 1929, JP1847
 
 ## Source Images
 
@@ -237,8 +237,8 @@ The Mosaic is 120 Tiles across and 80 rows deep. Its 1,148 Source Images come fr
 | Clarence H. White (American, 1871–1925) | [Illustration for "Beneath the Wrinkle"](https://clevelandart.org/art/1980.155) | 1903 | CMA 1980.155 | 3 |
 | Claude Flight (British, 1881–1955) | [Swing Boats](https://clevelandart.org/art/2004.104) | 1919–1921 | CMA 2004.104 | 1 |
 | Clement de Jonghe (Dutch, 1579–1679); Reinier Nooms, called Zeeman (Dutch, c. 1623–1664) | [Various Ships and Views of Amsterdam (Verscheÿde Schepen en Gesichten van Amstelredam), Part II](https://clevelandart.org/art/1944.27) | 1652–54 | CMA 1944.27 | 1 |
-| Clement de Jonghe (Dutch, 1579–1679); Reinier Nooms, called Zeeman (Dutch, c. 1623–1664) | [Various Ships and Views of Amsterdam (Verscheÿde Schepen en Gesichten van Amstelredam), Part II: A Frisian Peat Barge. The Dÿnop, near the Veensche Peat Pond](https://clevelandart.org/art/1944.27.11) | 1652–54 | CMA 1944.27.11 | 2 |
 | Clement de Jonghe (Dutch, 1579–1679); Reinier Nooms, called Zeeman (Dutch, c. 1623–1664) | [Various Ships and Views of Amsterdam (Verscheÿde Schepen en Gesichten van Amstelredam), Part II: A Frisian Bilander. A Geldersche Bilander](https://clevelandart.org/art/1944.27.10) | 1652–54 | CMA 1944.27.10 | 18 |
+| Clement de Jonghe (Dutch, 1579–1679); Reinier Nooms, called Zeeman (Dutch, c. 1623–1664) | [Various Ships and Views of Amsterdam (Verscheÿde Schepen en Gesichten van Amstelredam), Part II: A Frisian Peat Barge. The Dÿnop, near the Veensche Peat Pond](https://clevelandart.org/art/1944.27.11) | 1652–54 | CMA 1944.27.11 | 2 |
 | Clement de Jonghe (Dutch, 1579–1679); Reinier Nooms, called Zeeman (Dutch, c. 1623–1664) | [Various Ships and Views of Amsterdam (Verscheÿde Schepen en Gesichten van Amstelredam), Part II: A Water-ship bound for the Soutketen. A Brewer's Water-ship](https://clevelandart.org/art/1944.27.6) | 1652–54 | CMA 1944.27.6 | 2 |
 | Clement de Jonghe (Dutch, 1579–1679); Reinier Nooms, called Zeeman (Dutch, c. 1623–1664) | [Various Ships and Views of Amsterdam (Verscheÿde Schepen en Gesichten van Amstelredam), Part II: The Black Bear, a Greenland Whaler](https://clevelandart.org/art/1944.27.7) | 1652–54 | CMA 1944.27.7 | 1 |
 | Clement de Jonghe (Dutch, 1579–1679); Reinier Nooms, called Zeeman (Dutch, c. 1623–1664) | [Various Ships and Views of Amsterdam (Verscheÿde Schepen en Gesichten van Amstelredam), Part II: The Pearl and East Indiaman, The Double Eagle, a West Indiaman](https://clevelandart.org/art/1944.27.2) | 1652–54 | CMA 1944.27.2 | 1 |
@@ -1021,8 +1021,6 @@ The Mosaic is 120 Tiles across and 80 rows deep. Its 1,148 Source Images come fr
 | Turkey, 17th century | [Velvet Divan Cushion](https://clevelandart.org/art/1916.1385) | 17th century | CMA 1916.1385 | 4 |
 | Turkey, 19th century | [Embroidered Towel (Havlu)](https://clevelandart.org/art/1956.678) | 19th century | CMA 1956.678 | 1 |
 | Turkey, Late 18th- Early 19th century | [Table Cloth](https://clevelandart.org/art/1951.184) | c. 1775–1825 | CMA 1951.184 | 6 |
-| Unknown artist | [Bookplate: Amy Ivers Truesdell](https://clevelandart.org/art/1920.1413) | 1901 | CMA 1920.1413 | 2 |
-| Unknown artist | [Bookplate: Kate Benedict Hanna Ireland](https://clevelandart.org/art/1920.1361) | 1886–1920 | CMA 1920.1361 | 3 |
 | Utagawa Hiroshige (Japanese, 1797–1858) | [Cuckoo](https://clevelandart.org/art/1930.178) | 1840s or later | CMA 1930.178 | 12 |
 | Utagawa Hiroshige (Japanese, 1797–1858) | [Evening Snow at Asuka Hill, from the series Eight Views of the Environs of Edo](https://clevelandart.org/art/1940.983) | c. 1837–38 | CMA 1940.983 | 1 |
 | Utagawa Hiroshige (Japanese, 1797–1858) | [Fireworks at Ryōgoku, from the series One Hundred Views of Famous Places in Edo](https://clevelandart.org/art/1940.986) | 1858 | CMA 1940.986 | 4 |
@@ -1160,3 +1158,5 @@ The Mosaic is 120 Tiles across and 80 rows deep. Its 1,148 Source Images come fr
 | Édouard Vuillard (French, 1868–1940) | [The Beach at Saint-Jacut](https://clevelandart.org/art/2020.143) | 1909 | CMA 2020.143 | 1 |
 | Édouard Vuillard (French, 1868–1940); Auguste Clot (French, 1858–1936); Ambroise Vollard (French, 1867–1939) | [Cover](https://clevelandart.org/art/1951.65.1) | 1899 | CMA 1951.65.1 | 2 |
 | Ōgata Gekkō (Japanese, 1859–1920) | [Beauties Harvesting Bracken, from the series Gekkō’s Miscellaney](https://clevelandart.org/art/2017.69) | c. 1886–1899 | CMA 2017.69 | 1 |
+|  | [Bookplate: Amy Ivers Truesdell](https://clevelandart.org/art/1920.1413) | 1901 | CMA 1920.1413 | 2 |
+|  | [Bookplate: Kate Benedict Hanna Ireland](https://clevelandart.org/art/1920.1361) | 1886–1920 | CMA 1920.1361 | 3 |
