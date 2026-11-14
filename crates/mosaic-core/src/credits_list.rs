@@ -51,10 +51,16 @@ impl Mosaic {
         list
     }
 
-    /// The Target Image's Credit on one line: artist, italic title, date and collection.
+    /// The Target Image's Credit on one line: artist, italic title, date and collection. Its
+    /// file name when it has no Credit.
     fn target_image_line(&self) -> String {
         let Some(credit) = self.target_image_credit() else {
-            return String::new();
+            let target_image = self.target_image();
+            return target_image
+                .file_name()
+                .unwrap_or(target_image.as_os_str())
+                .to_string_lossy()
+                .into_owned();
         };
         let title = credit.title().map(|_| title(credit, true));
         [

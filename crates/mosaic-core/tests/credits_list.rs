@@ -47,3 +47,16 @@ fn the_credits_list_credits_the_target_image_then_each_source_image_with_its_til
          | green.png | 1 |\n"
     );
 }
+
+#[test]
+fn a_target_image_without_a_credit_is_listed_by_its_file_name() {
+    let fixture = Fixture::new();
+    let mosaic = striped_mosaic(&fixture);
+
+    let list = mosaic.credits_list();
+
+    assert!(
+        list.starts_with("## Target Image\n\ntarget.png\n\n## Source Images\n"),
+        "{list}"
+    );
+}
