@@ -382,3 +382,33 @@ fn the_report_tells_the_credits_file_problems_apart_from_skipped_files() {
         "{skipped:?}"
     );
 }
+
+/// Writes `contents` as the Credits File beside the Target Image, outside the Source Library.
+fn add_target_image_credits_file(fixture: &Fixture, contents: &[u8]) {
+    std::fs::write(fixture.path("credits.csv"), contents).unwrap();
+}
+
+#[test]
+fn the_target_image_takes_the_credit_of_its_row_in_the_credits_file_beside_it() {
+    let fixture = Fixture::new();
+    add_target_image_credits_file(
+        &fixture,
+        b"path,artist,title,date,collection,link\n\
+          other.png,Someone else,Another Target Image,,,\n\
+          target.png,Katsushika Hokusai,The Great Wave,c. 1831,The Met,https://example.org/wave\n",
+    );
+
+    let built = build_red_and_blue(&fixture);
+
+    let credit = built
+        .mosaic
+        .target_image_credit()
+        .expect("the Target Image has a Credit");
+    assert_eq!(credit.artist(), Some("Katsushika Hokusai"));
+    assert_eq!(credit.title(), Some("The Great Wave"));
+    assert_eq!(credit.date(), Some("c. 1831"));
+    assert_eq!(credit.collection(), Some("The Met"));
+    assert_eq!(credit.link(), Some("https://example.org/wave"));
+    assert_eq!(built.report.warnings, []);
+    assert!(red(&built.mosaic).credit().is_none());
+}

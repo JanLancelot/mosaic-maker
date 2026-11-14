@@ -264,6 +264,7 @@ impl Mosaic {
 
         Ok(Mosaic::new(
             settings.target_image,
+            None,
             source_library,
             BuildSettings {
                 tiles_across: settings.tiles_across,

@@ -157,6 +157,7 @@ pub fn build(
     if analysed.is_empty() {
         return Err(BuildError::EmptySourceLibrary);
     }
+    let target_image_credit = target_image_credit(target_image, &mut warnings);
 
     let tile_count = grid.tile_count();
     reporter.report(Stage::MatchingTiles, 0, tile_count)?;
@@ -243,6 +244,7 @@ pub fn build(
     let absolute = |path: &Path| std::path::absolute(path).unwrap_or_else(|_| path.to_owned());
     let mosaic = Mosaic::new(
         absolute(target_image),
+        target_image_credit,
         absolute(source_library),
         settings.clone(),
         grid.rows,
@@ -270,6 +272,18 @@ fn open_image(path: &Path) -> Result<RgbImage, image::ImageError> {
     Ok(analysis::on_white(
         ImageReader::open(path)?.with_guessed_format()?.decode()?,
     ))
+}
+
+/// The Credit of `target_image` given by the Credits File in its folder, by its file name.
+fn target_image_credit(target_image: &Path, warnings: &mut Vec<BuildWarning>) -> Option<Credit> {
+    let file_name = target_image.file_name()?;
+    let folder = target_image.parent().unwrap_or(Path::new(""));
+    let credits = Credits::read(
+        &folder.join(CREDITS_FILE_NAME),
+        CreditsFileOf::TargetImage,
+        warnings,
+    );
+    credits.of(Path::new(file_name)).cloned()
 }
 
 /// What a build finds in its Source Library.
