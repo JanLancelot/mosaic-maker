@@ -12,7 +12,7 @@ use crate::cache::AnalysisCache;
 use crate::cancel::CancelToken;
 use crate::color_signature::ColorSignature;
 use crate::credits_files::CreditsFiles;
-use crate::mosaic::{Mosaic, RENDERED_TILE_SIZE, SourceImage, SourceImageId, Tile};
+use crate::mosaic::{Mosaic, RENDERED_TILE_SIZE, SourceImage, SourceImageId, TargetImage, Tile};
 use crate::scan;
 use crate::warning::{BuildReport, BuildStats, BuildWarning};
 
@@ -163,7 +163,6 @@ pub fn build(
         return Err(BuildError::EmptySourceLibrary);
     }
     let credits = credits_files.source_image_credits(&identified_paths);
-    let target_image_credit = credits_files.target_image_credit().cloned();
 
     let tile_count = grid.tile_count();
     reporter.report(Stage::MatchingTiles, 0, tile_count)?;
@@ -249,8 +248,10 @@ pub fn build(
 
     let absolute = |path: &Path| std::path::absolute(path).unwrap_or_else(|_| path.to_owned());
     let mosaic = Mosaic::new(
-        absolute(target_image),
-        target_image_credit,
+        TargetImage {
+            path: absolute(target_image),
+            credit: credits_files.target_image_credit().cloned(),
+        },
         absolute(source_library),
         settings.clone(),
         grid.rows,

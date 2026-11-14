@@ -118,12 +118,18 @@ impl SourceImage {
     }
 }
 
+/// The picture a Mosaic recreates: where it was, and its Credit if it has one.
+#[derive(Debug, Clone)]
+pub(crate) struct TargetImage {
+    /// An absolute path.
+    pub(crate) path: PathBuf,
+    pub(crate) credit: Option<Credit>,
+}
+
 /// A grid of Tiles that recreates a Target Image, each Tile filled by one Source Image.
 #[derive(Debug, Clone)]
 pub struct Mosaic {
-    /// The Target Image the Mosaic recreates, as an absolute path.
-    target_image: PathBuf,
-    target_image_credit: Option<Credit>,
+    target_image: TargetImage,
     /// The Source Library the Mosaic was built from, as an absolute path.
     source_library: PathBuf,
     settings: BuildSettings,
@@ -135,11 +141,8 @@ pub struct Mosaic {
 }
 
 impl Mosaic {
-    // Each is a separate part of a Mosaic, and both callers name them all.
-    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
-        target_image: PathBuf,
-        target_image_credit: Option<Credit>,
+        target_image: TargetImage,
         source_library: PathBuf,
         settings: BuildSettings,
         rows: u32,
@@ -153,7 +156,6 @@ impl Mosaic {
         );
         Self {
             target_image,
-            target_image_credit,
             source_library,
             settings,
             rows,
@@ -165,13 +167,13 @@ impl Mosaic {
 
     /// The Target Image the Mosaic recreates, as an absolute path.
     pub fn target_image(&self) -> &Path {
-        &self.target_image
+        &self.target_image.path
     }
 
     /// Who made the Target Image and where it comes from, if the Credits File beside it said
     /// when the Mosaic was built.
     pub fn target_image_credit(&self) -> Option<&Credit> {
-        self.target_image_credit.as_ref()
+        self.target_image.credit.as_ref()
     }
 
     /// The Source Library the Mosaic was built from, as an absolute path.

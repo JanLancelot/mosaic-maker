@@ -16,7 +16,9 @@ use zip::{CompressionMethod, ZipArchive, ZipWriter};
 
 use crate::build::BuildSettings;
 use crate::credit::Credit;
-use crate::mosaic::{Mosaic, RENDERED_TILE_SIZE, SourceImage, SourceImageId, THUMBNAIL_SIZE};
+use crate::mosaic::{
+    Mosaic, RENDERED_TILE_SIZE, SourceImage, SourceImageId, THUMBNAIL_SIZE, TargetImage,
+};
 
 /// Bump whenever the manifest's layout or meaning changes, and keep opening the older versions
 /// in [`OPENABLE_FORMAT_VERSIONS`]. Files of any other version are refused rather than misread.
@@ -268,8 +270,10 @@ impl Mosaic {
             .collect::<Result<Vec<_>, OpenError>>()?;
 
         Ok(Mosaic::new(
-            settings.target_image,
-            target_image_credit.and_then(CreditEntry::into_credit),
+            TargetImage {
+                path: settings.target_image,
+                credit: target_image_credit.and_then(CreditEntry::into_credit),
+            },
             source_library,
             BuildSettings {
                 tiles_across: settings.tiles_across,
