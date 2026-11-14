@@ -153,7 +153,12 @@ pub fn build(
     let cache = &cache.kept_out_of(source_library);
     let mut warnings = Vec::new();
     let target_image_name = target_image.file_name().map(Path::new);
-    let shares_credits_file = same_folder(folder_of(target_image), source_library);
+    let target_image_folder = folder_within(folder_of(target_image), source_library);
+    let shares_credits_file = target_image_folder.as_deref() == Some(Path::new(""));
+    // In a subfolder of the Source Library, the Target Image's Credits File is in its scan.
+    let target_image_credits_file = target_image_folder
+        .filter(|_| !shares_credits_file)
+        .map(|folder| folder.join(CREDITS_FILE_NAME));
     let AnalysedLibrary {
         analysed,
         credits,
@@ -161,6 +166,7 @@ pub fn build(
     } = analyse_source_library(
         source_library,
         target_image_name.filter(|_| shares_credits_file),
+        target_image_credits_file.as_deref(),
         cache,
         &mut warnings,
         &mut reporter,
@@ -318,12 +324,15 @@ fn folder_of(path: &Path) -> &Path {
     }
 }
 
-/// Whether `a` and `b` are the same folder, however each is written.
-fn same_folder(a: &Path, b: &Path) -> bool {
-    match (std::fs::canonicalize(a), std::fs::canonicalize(b)) {
-        (Ok(a), Ok(b)) => a == b,
-        _ => false,
-    }
+/// Where `folder` is within `source_library`, however each is written: empty for its root, and
+/// `None` if it is outside it.
+fn folder_within(folder: &Path, source_library: &Path) -> Option<PathBuf> {
+    let folder = std::fs::canonicalize(folder).ok()?;
+    let source_library = std::fs::canonicalize(source_library).ok()?;
+    folder
+        .strip_prefix(source_library)
+        .ok()
+        .map(Path::to_path_buf)
 }
 
 /// What a build finds in its Source Library.
@@ -341,12 +350,14 @@ struct AnalysedLibrary {
 /// come in path order, so builds are repeatable however the parallel work interleaves.
 /// Byte-identical files are one Source Image, last seen at the first path and credited by
 /// the first path with a Credit. Files that can't be Source Images are skipped with a
-/// warning; the Credits File is not considered as one, and its problems are warnings too.
+/// warning; the Credits File is not considered as one, nor is `target_image_credits_file`,
+/// the Target Image's when it sits in a subfolder, and its problems are warnings too.
 /// Its row for `target_image_name`, the Target Image's file name when it sits at the root
 /// and shares the Credits File, isn't reported as naming a file missing from the library.
 fn analyse_source_library(
     source_library: &Path,
     target_image_name: Option<&Path>,
+    target_image_credits_file: Option<&Path>,
     cache: &AnalysisCache,
     warnings: &mut Vec<BuildWarning>,
     reporter: &mut Reporter<'_, impl FnMut(Progress)>,
@@ -356,6 +367,7 @@ fn analyse_source_library(
         .iter()
         .position(|path| path == Path::new(CREDITS_FILE_NAME))
         .map(|index| files.remove(index));
+    files.retain(|path| Some(path.as_path()) != target_image_credits_file);
     let credits_by_path = match credits_file {
         Some(path) => {
             let credits = Credits::read(

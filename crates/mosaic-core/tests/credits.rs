@@ -577,3 +577,27 @@ fn the_target_image_row_of_a_shared_credits_file_names_no_missing_source_image()
         }]
     );
 }
+
+#[test]
+fn the_credits_file_beside_a_target_image_in_a_source_library_subfolder_is_not_considered_as_a_source_image()
+ {
+    let fixture = Fixture::new();
+    fixture.add_file("credits.csv", b"path,title\nred.png,Red Fuji\n");
+    fixture.add_file(
+        "prints/credits.csv",
+        b"path,title\ntarget.png,The Great Wave\n",
+    );
+
+    let built =
+        build_red_and_blue_from_target_image_in_source_library(&fixture, "prints/target.png");
+
+    assert_eq!(built.report.warnings, []);
+    assert_eq!(
+        built.mosaic.target_image_credit().unwrap().title(),
+        Some("The Great Wave")
+    );
+    assert_eq!(
+        red(&built.mosaic).credit().unwrap().title(),
+        Some("Red Fuji")
+    );
+}
