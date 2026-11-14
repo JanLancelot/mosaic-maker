@@ -19,16 +19,28 @@ pub(crate) struct AnalysedSourceImage {
     pub(crate) id: SourceImageId,
     /// Every file in the Source Library holding the Source Image, relative to it and in path
     /// order. Never empty.
-    pub(crate) paths: Vec<PathBuf>,
+    paths: Vec<PathBuf>,
     pub(crate) analysis: Analysis,
     /// Whether `analysis` was read from the [`AnalysisCache`] rather than computed.
     pub(crate) from_cache: bool,
 }
 
 impl AnalysedSourceImage {
+    /// Every file in the Source Library holding the Source Image, relative to it and in path
+    /// order.
+    pub(crate) fn paths(&self) -> &[PathBuf] {
+        &self.paths
+    }
+
     /// Where the Source Image was found: the first of its paths.
     pub(crate) fn last_known_path(&self) -> &Path {
         &self.paths[0]
+    }
+
+    /// Records that the Source Image was also found at `relative_path`, which comes after
+    /// every path it was found at so far.
+    pub(crate) fn also_found_at(&mut self, relative_path: PathBuf) {
+        self.paths.push(relative_path);
     }
 }
 

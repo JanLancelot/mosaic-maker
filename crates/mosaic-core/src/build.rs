@@ -238,7 +238,7 @@ pub fn build(
                 analysed.id,
                 analysed.last_known_path().to_owned(),
                 thumbnail,
-                credits.of_source_image(&analysed.paths).cloned(),
+                credits.of_source_image(analysed.paths()).cloned(),
             )
         })
         .collect();
@@ -303,7 +303,7 @@ fn analyse_source_library(
     for (relative_path, outcome) in files.into_iter().zip(outcomes) {
         match outcome {
             Ok(source_image) => match index_of.get(&source_image.id) {
-                Some(&index) => analysed[index].paths.push(relative_path),
+                Some(&index) => analysed[index].also_found_at(relative_path),
                 None => {
                     index_of.insert(source_image.id, analysed.len());
                     analysed.push(source_image);
