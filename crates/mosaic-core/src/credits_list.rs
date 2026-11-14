@@ -45,7 +45,7 @@ impl Mosaic {
                 list,
                 "| {} | {} | {} | {} | {tiles} |",
                 text(credit.artist()),
-                title(credit, false),
+                title(credit, false).unwrap_or_default(),
                 text(credit.date()),
                 text(credit.collection()),
             );
@@ -72,10 +72,9 @@ impl Mosaic {
                 .to_string_lossy()
                 .into_owned();
         };
-        let title = credit.title().map(|_| title(credit, true));
         [
             credit.artist().map(str::to_owned),
-            title,
+            title(credit, true),
             credit.date().map(str::to_owned),
             credit.collection().map(str::to_owned),
         ]
@@ -86,16 +85,17 @@ impl Mosaic {
     }
 }
 
-/// The Credit's title, linked by its web link if it has one.
-fn title(credit: &Credit, italic: bool) -> String {
-    let text = credit.title().unwrap_or_default();
+/// The Credit's title, or its link as written in place of a missing one, linked by its web
+/// link if it has one. `None` if it has neither.
+fn title(credit: &Credit, italic: bool) -> Option<String> {
+    let text = credit.title().or(credit.link())?;
     let text = if italic {
         format!("*{text}*")
     } else {
         text.to_owned()
     };
-    match credit.web_link() {
+    Some(match credit.web_link() {
         Some(link) => format!("[{text}]({link})"),
         None => text,
-    }
+    })
 }

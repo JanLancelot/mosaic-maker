@@ -122,3 +122,64 @@ fn a_target_image_without_a_credit_is_listed_by_its_file_name() {
         "{list}"
     );
 }
+
+#[test]
+fn only_a_web_link_links_a_title_and_a_link_without_a_title_stands_in_for_it() {
+    let fixture = Fixture::new();
+    let mosaic = one_tile_each(
+        &fixture,
+        &["a.png", "b.png", "c.png", "d.png", "e.png"],
+        b"path,artist,title,link\n\
+          a.png,A,Web,https://example.org/a\n\
+          b.png,B,File,file:///etc/passwd\n\
+          c.png,C,Script,javascript:alert(1)\n\
+          d.png,D,,http://example.org/d\n\
+          e.png,E,,pages/e.html\n",
+    );
+
+    assert_eq!(
+        source_image_rows(&mosaic),
+        "| A | [Web](https://example.org/a) |  |  | 1 |\n\
+         | B | File |  |  | 1 |\n\
+         | C | Script |  |  | 1 |\n\
+         | D | [http://example.org/d](http://example.org/d) |  |  | 1 |\n\
+         | E | pages/e.html |  |  | 1 |\n"
+    );
+}
+
+/// The Target Image line of `mosaic`'s Credits List.
+fn target_image_line(mosaic: &Mosaic) -> String {
+    let list = mosaic.credits_list();
+    let line = list
+        .strip_prefix("## Target Image\n\n")
+        .expect("a Target Image section first");
+    line.lines().next().unwrap().to_owned()
+}
+
+#[test]
+fn the_target_image_line_links_its_italic_title_only_by_a_web_link_and_leaves_out_unknown_fields() {
+    let fixture = Fixture::new();
+    add_target_image_credits_file(
+        &fixture,
+        b"path,artist,title,date,collection,link\n\
+          target.png,,The Great Wave,,The Met,file:///wave.html\n",
+    );
+    let mosaic = striped_mosaic(&fixture);
+
+    assert_eq!(target_image_line(&mosaic), "*The Great Wave*, The Met");
+}
+
+#[test]
+fn a_target_image_link_without_a_title_stands_in_for_it() {
+    let fixture = Fixture::new();
+    add_target_image_credits_file(
+        &fixture,
+        b"path,artist,link\ntarget.png,Katsushika Hokusai,https://example.org/wave\n",
+    );
+    let mosaic = striped_mosaic(&fixture);
+
+    assert_eq!(
+        target_image_line(&mosaic),
+        "Katsushika Hokusai, [*https://example.org/wave*](https://example.org/wave)"
+    );
+}
