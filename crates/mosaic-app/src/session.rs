@@ -178,10 +178,16 @@ impl Session {
         }
     }
 
-    /// The setup inputs, to edit. A running build has its own copy, so edits only affect
-    /// the next.
-    pub fn setup_mut(&mut self) -> &mut Setup {
-        &mut self.setup
+    /// The setup inputs.
+    pub fn setup(&self) -> &Setup {
+        &self.setup
+    }
+
+    /// The setup inputs, to edit. Refused while an operation runs, since opening a Mosaic File
+    /// replaces them when it finishes and would lose the edits.
+    pub fn setup_mut(&mut self) -> Result<&mut Setup, Refused> {
+        self.refuse_if_busy()?;
+        Ok(&mut self.setup)
     }
 
     /// What the build that made the shown Mosaic worked around. A build clears it as it
@@ -205,15 +211,25 @@ impl Session {
         self.outcome.as_ref()
     }
 
+    /// Whether [`Self::build`] may start now: not while an operation runs, nor until a Target
+    /// Image and a Source Library are chosen.
+    pub fn may_build(&self) -> Result<(), Refused> {
+        self.refuse_if_busy()?;
+        match (&self.setup.target_image, &self.setup.source_library) {
+            (Some(_), Some(_)) => Ok(()),
+            _ => Err(Refused::SetupIncomplete),
+        }
+    }
+
     /// Builds a Mosaic from the setup inputs, to show in place of any shown now. Its rendered
     /// picture is scaled down to fit within `max_texture_side` pixels square.
     pub fn build(&mut self, max_texture_side: u32) -> Result<(), Refused> {
-        self.refuse_if_busy()?;
+        self.may_build()?;
         let (Some(target_image), Some(source_library)) = (
             self.setup.target_image.clone(),
             self.setup.source_library.clone(),
         ) else {
-            return Err(Refused::SetupIncomplete);
+            unreachable!("may_build refuses until both are chosen");
         };
         let settings = self.setup.settings.clone();
         let cache = self.cache.clone();
@@ -243,11 +259,16 @@ impl Session {
         Ok(())
     }
 
+    /// Whether [`Self::open`] may start now: not while an operation runs.
+    pub fn may_open(&self) -> Result<(), Refused> {
+        self.refuse_if_busy()
+    }
+
     /// Opens the Mosaic File at `path`, to show in place of any Mosaic shown now, and sets the
     /// setup inputs to those it was built from. Its rendered picture is scaled down to fit
     /// within `max_texture_side` pixels square.
     pub fn open(&mut self, path: PathBuf, max_texture_side: u32) -> Result<(), Refused> {
-        self.refuse_if_busy()?;
+        self.may_open()?;
         self.start(
             Operation::Open(path.clone()),
             None,
@@ -303,10 +324,24 @@ impl Session {
         Ok(())
     }
 
+    /// Whether [`Self::save`], [`Self::export`] and [`Self::save_credits_list`] may start now:
+    /// not while an operation runs, nor while no Mosaic is shown.
+    pub fn may_write(&self) -> Result<(), Refused> {
+        self.refuse_if_busy()?;
+        match self.shown {
+            Some(_) => Ok(()),
+            None => Err(Refused::NothingShown),
+        }
+    }
+
     /// The shown Mosaic, for an operation that writes it to a file.
     fn mosaic_to_write(&self) -> Result<Arc<Mosaic>, Refused> {
-        self.refuse_if_busy()?;
-        self.shown.clone().ok_or(Refused::NothingShown)
+        self.may_write()?;
+        Ok(Arc::clone(
+            self.shown
+                .as_ref()
+                .expect("may_write refuses while no Mosaic is shown"),
+        ))
     }
 
     /// Reads the Original of the Source Image filling `tile` on the shown Mosaic, scaled down
