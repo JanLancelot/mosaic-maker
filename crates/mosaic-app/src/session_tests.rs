@@ -145,7 +145,7 @@ fn a_failed_build_ends_failed_and_the_earlier_mosaic_stays_shown() {
     let (mut session, runner) = built_session(&fixture);
     let empty_library = fixture.path("empty");
     std::fs::create_dir(&empty_library).unwrap();
-    session.setup_mut().source_library = Some(empty_library);
+    session.setup_mut().unwrap().source_library = Some(empty_library);
 
     session.build(MAX_TEXTURE_SIDE).unwrap();
     runner.run_all();
@@ -195,7 +195,7 @@ fn opening_restores_the_setup_it_was_built_from_and_replaces_the_shown_mosaic() 
     assert_eq!(saved.outcome(), Some(&Outcome::Saved(path.clone())));
 
     let (mut session, runner) = built_session(&fixture);
-    *session.setup_mut() = Setup {
+    *session.setup_mut().unwrap() = Setup {
         target_image: None,
         source_library: None,
         settings: BuildSettings {
@@ -209,7 +209,7 @@ fn opening_restores_the_setup_it_was_built_from_and_replaces_the_shown_mosaic() 
 
     let newly_shown = session.poll().expect("the opened Mosaic is newly shown");
     assert_eq!(session.outcome(), Some(&Outcome::Opened(path)));
-    assert_eq!(*session.setup_mut(), fixture.setup());
+    assert_eq!(*session.setup(), fixture.setup());
     assert_eq!(newly_shown.mosaic.target_image(), fixture.target_image());
     assert_eq!(newly_shown.rendered, *newly_shown.mosaic.rendered());
 }
@@ -341,4 +341,88 @@ fn the_build_report_stays_through_saving_and_exporting_and_goes_when_a_build_sta
     runner.run_all();
     session.poll();
     assert_eq!(session.build_report(), None);
+}
+
+#[test]
+fn opening_may_start_unless_an_operation_runs() {
+    let fixture = Fixture::new();
+    let (mut session, runner) = session(&fixture);
+    assert_eq!(session.may_open(), Ok(()));
+
+    session.build(MAX_TEXTURE_SIDE).unwrap();
+    assert_eq!(session.may_open(), Err(Refused::Busy));
+
+    runner.run_all();
+    session.poll();
+    assert_eq!(session.may_open(), Ok(()));
+}
+
+#[test]
+fn building_may_start_once_a_target_image_and_source_library_are_chosen_unless_an_operation_runs() {
+    let fixture = Fixture::new();
+    let (mut session, runner) = session(&fixture);
+    assert_eq!(session.may_build(), Ok(()));
+
+    session.build(MAX_TEXTURE_SIDE).unwrap();
+    assert_eq!(session.may_build(), Err(Refused::Busy));
+    runner.run_all();
+    session.poll();
+    assert_eq!(session.may_build(), Ok(()));
+
+    session.setup_mut().unwrap().source_library = None;
+    assert_eq!(session.may_build(), Err(Refused::SetupIncomplete));
+    assert_eq!(
+        session.build(MAX_TEXTURE_SIDE),
+        Err(Refused::SetupIncomplete)
+    );
+
+    let mut session = Session::new(
+        Box::new(runner),
+        fixture.cache(),
+        Setup {
+            target_image: None,
+            ..fixture.setup()
+        },
+    );
+    assert_eq!(session.may_build(), Err(Refused::SetupIncomplete));
+    assert_eq!(
+        session.build(MAX_TEXTURE_SIDE),
+        Err(Refused::SetupIncomplete)
+    );
+}
+
+#[test]
+fn writing_may_start_while_a_mosaic_is_shown_unless_an_operation_runs() {
+    let fixture = Fixture::new();
+    let (mut session, runner) = session(&fixture);
+    assert_eq!(session.may_write(), Err(Refused::NothingShown));
+
+    session.build(MAX_TEXTURE_SIDE).unwrap();
+    assert_eq!(session.may_write(), Err(Refused::Busy));
+    runner.run_all();
+    session.poll();
+    assert_eq!(session.may_write(), Ok(()));
+
+    session.save(fixture.path("stripes.mosaic")).unwrap();
+    assert_eq!(session.may_write(), Err(Refused::Busy));
+}
+
+#[test]
+fn setup_edits_are_refused_while_an_operation_runs_as_opening_would_replace_them() {
+    let fixture = Fixture::new();
+    let (mut saved, runner) = built_session(&fixture);
+    let path = fixture.path("stripes.mosaic");
+    saved.save(path.clone()).unwrap();
+    runner.run_all();
+    saved.poll();
+
+    let (mut session, runner) = session(&fixture);
+    assert!(session.setup_mut().is_ok());
+    session.open(path, MAX_TEXTURE_SIDE).unwrap();
+    assert_eq!(session.setup_mut(), Err(Refused::Busy));
+
+    runner.run_all();
+    session.poll();
+    session.setup_mut().unwrap().settings.seed = 7;
+    assert_eq!(session.setup().settings.seed, 7);
 }

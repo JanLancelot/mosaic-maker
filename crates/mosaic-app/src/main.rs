@@ -20,7 +20,8 @@ use mosaic_core::{
 };
 
 use session::{
-    Job, NewlyShown, Operation, OriginalRead, Outcome, ReadingOriginal, Runner, Session, Setup,
+    Job, NewlyShown, Operation, OriginalRead, Outcome, ReadingOriginal, Refused, Runner, Session,
+    Setup,
 };
 
 const DEFAULT_TILES_ACROSS: u32 = 60;
@@ -183,11 +184,6 @@ impl MosaicMakerApp {
         }
     }
 
-    /// Whether nothing is being built, saved, opened or exported.
-    fn idle(&self) -> bool {
-        self.session.running().is_none()
-    }
-
     /// Puts the Session's newly shown Mosaic on the canvas, uploading its rendered picture.
     fn show(&mut self, ctx: &egui::Context, newly_shown: NewlyShown) {
         let NewlyShown { mosaic, rendered } = newly_shown;
@@ -204,22 +200,22 @@ impl MosaicMakerApp {
         });
     }
 
+    // Each control below is enabled by asking the Session whether its operation may start.
+    // That check and the start happen in the same frame, and the Session only takes in a
+    // finished operation in `poll`, so the answer can't change in between and the operation's
+    // own refusal is ignored.
+
     fn menu_bar(&mut self, ui: &mut egui::Ui) {
-        let idle = self.idle();
-        let saveable = idle && self.shown.is_some();
         egui::MenuBar::new().ui(ui, |ui| {
             ui.menu_button("File", |ui| {
-                // The Session would refuse what these buttons are disabled for, so its
-                // refusals aren't shown.
-                if ui.add_enabled(idle, egui::Button::new("Open…")).clicked()
+                if add_if_allowed(ui, self.session.may_open(), egui::Button::new("Open…")).clicked()
                     && let Some(path) = rfd::FileDialog::new()
                         .add_filter("Mosaic", &["mosaic"])
                         .pick_file()
                 {
                     let _ = self.session.open(path, max_texture_side(ui.ctx()));
                 }
-                if ui
-                    .add_enabled(saveable, egui::Button::new("Save…"))
+                if add_if_allowed(ui, self.session.may_write(), egui::Button::new("Save…"))
                     .clicked()
                     && let Some(path) = rfd::FileDialog::new()
                         .add_filter("Mosaic", &["mosaic"])
@@ -229,15 +225,21 @@ impl MosaicMakerApp {
                     let _ = self.session.save(path);
                 }
                 ui.separator();
-                if ui
-                    .add_enabled(saveable, egui::Button::new("Export PNG…"))
-                    .clicked()
+                if add_if_allowed(
+                    ui,
+                    self.session.may_write(),
+                    egui::Button::new("Export PNG…"),
+                )
+                .clicked()
                 {
                     self.export_dialog_open = true;
                 }
-                if ui
-                    .add_enabled(saveable, egui::Button::new("Save Credits List…"))
-                    .clicked()
+                if add_if_allowed(
+                    ui,
+                    self.session.may_write(),
+                    egui::Button::new("Save Credits List…"),
+                )
+                .clicked()
                     && let Some(path) = rfd::FileDialog::new()
                         .add_filter("Markdown", &["md"])
                         .set_file_name(self.suggested_file_name("-credits.md"))
@@ -253,6 +255,7 @@ impl MosaicMakerApp {
     fn export_dialog(&mut self, ctx: &egui::Context) {
         let mut export = false;
         let mut cancel = false;
+        let may_export = self.session.may_write();
         let modal = egui::Modal::new(egui::Id::unique("export")).show(ctx, |ui| {
             ui.heading("Export PNG");
             ui.add_space(8.0);
@@ -268,7 +271,7 @@ impl MosaicMakerApp {
             ui.weak("Tiles are drawn from their Originals, or from Thumbnails where those are unreachable.");
             ui.add_space(8.0);
             ui.horizontal(|ui| {
-                export = ui.button("Export…").clicked();
+                export = add_if_allowed(ui, may_export, egui::Button::new("Export…")).clicked();
                 cancel = ui.button("Cancel").clicked();
             });
         });
@@ -281,7 +284,6 @@ impl MosaicMakerApp {
                 .set_file_name(self.suggested_file_name(".png"))
                 .save_file()
         {
-            // Export PNG is only offered while the Session would accept it.
             let _ = self.session.export(path, self.export_tile_size);
         }
     }
@@ -300,13 +302,12 @@ impl MosaicMakerApp {
     fn setup_panel(&mut self, ui: &mut egui::Ui) {
         ui.heading("Mosaic Maker");
         ui.add_space(8.0);
-        let idle = self.idle();
-        let setup = self.session.setup_mut();
+        // The controls edit a copy, written back if the Session takes setup edits now.
+        let editable = self.session.setup_mut().map(|_| ());
+        let mut setup = self.session.setup().clone();
 
         ui.label("Target Image");
-        if ui
-            .add_enabled(idle, egui::Button::new("Choose Target Image…"))
-            .clicked()
+        if add_if_allowed(ui, editable, egui::Button::new("Choose Target Image…")).clicked()
             && let Some(path) = rfd::FileDialog::new()
                 .add_filter("Images", &["jpg", "jpeg", "png", "webp"])
                 .pick_file()
@@ -317,9 +318,7 @@ impl MosaicMakerApp {
         ui.add_space(8.0);
 
         ui.label("Source Library");
-        if ui
-            .add_enabled(idle, egui::Button::new("Choose Source Library…"))
-            .clicked()
+        if add_if_allowed(ui, editable, egui::Button::new("Choose Source Library…")).clicked()
             && let Some(path) = rfd::FileDialog::new().pick_folder()
         {
             setup.source_library = Some(path);
@@ -329,16 +328,18 @@ impl MosaicMakerApp {
 
         let settings = &mut setup.settings;
         let label = ui.label("Tiles Across");
-        ui.add_enabled(
-            idle,
+        add_if_allowed(
+            ui,
+            editable,
             egui::DragValue::new(&mut settings.tiles_across).range(1..=300),
         )
         .labelled_by(label.id);
         ui.add_space(8.0);
 
         let label = ui.label("Repeat Radius");
-        ui.add_enabled(
-            idle,
+        add_if_allowed(
+            ui,
+            editable,
             egui::DragValue::new(&mut settings.repeat_radius).range(0..=20),
         )
         .labelled_by(label.id);
@@ -346,25 +347,22 @@ impl MosaicMakerApp {
 
         let label = ui.label("Seed");
         ui.horizontal(|ui| {
-            ui.add_enabled(idle, egui::DragValue::new(&mut settings.seed))
+            add_if_allowed(ui, editable, egui::DragValue::new(&mut settings.seed))
                 .labelled_by(label.id);
-            if ui
-                .add_enabled(idle, egui::Button::new("Randomise"))
-                .clicked()
-            {
+            if add_if_allowed(ui, editable, egui::Button::new("Randomise")).clicked() {
                 settings.seed = random_seed();
             }
         });
         ui.add_space(8.0);
 
-        let ready = setup.target_image.is_some() && setup.source_library.is_some();
+        if let Ok(stored) = self.session.setup_mut() {
+            *stored = setup;
+        }
+
         let building = self.session.running() == Some(&Operation::Build);
         ui.horizontal(|ui| {
-            if ui
-                .add_enabled(idle && ready, egui::Button::new("Generate"))
-                .clicked()
+            if add_if_allowed(ui, self.session.may_build(), egui::Button::new("Generate")).clicked()
             {
-                // Generate is only enabled while the Session would accept it.
                 let _ = self.session.build(max_texture_side(ui.ctx()));
             }
             if building && ui.button("Cancel").clicked() {
@@ -433,6 +431,28 @@ fn status(outcome: &Outcome) -> Option<String> {
         }
         Outcome::Crashed(_) => "Something went wrong with the file.".to_owned(),
     })
+}
+
+/// Adds `widget`, enabled if `allowed` is, and otherwise saying why not when hovered.
+fn add_if_allowed(
+    ui: &mut egui::Ui,
+    allowed: Result<(), Refused>,
+    widget: impl egui::Widget,
+) -> egui::Response {
+    let response = ui.add_enabled(allowed.is_ok(), widget);
+    match allowed {
+        Ok(()) => response,
+        Err(refused) => response.on_disabled_hover_text(refusal(refused)),
+    }
+}
+
+/// Why a greyed-out control can't be used now.
+fn refusal(refused: Refused) -> &'static str {
+    match refused {
+        Refused::Busy => "Wait until the running operation finishes",
+        Refused::SetupIncomplete => "Choose a Target Image and a Source Library first",
+        Refused::NothingShown => "Build or open a Mosaic first",
+    }
 }
 
 impl ShownMosaic {
