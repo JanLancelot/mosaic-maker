@@ -426,3 +426,24 @@ fn setup_edits_are_refused_while_an_operation_runs_as_opening_would_replace_them
     session.setup_mut().unwrap().settings.seed = 7;
     assert_eq!(session.setup().settings.seed, 7);
 }
+
+#[test]
+fn an_incomplete_setup_refuses_only_building() {
+    let fixture = Fixture::new();
+    let incomplete = Setup {
+        source_library: None,
+        ..fixture.setup()
+    };
+
+    let (mut session, _runner) = session(&fixture);
+    *session.setup_mut().unwrap() = incomplete.clone();
+    assert_eq!(session.may_open(), Ok(()));
+    assert_eq!(session.may_write(), Err(Refused::NothingShown));
+    assert_eq!(session.may_build(), Err(Refused::SetupIncomplete));
+
+    let (mut session, _runner) = built_session(&fixture);
+    *session.setup_mut().unwrap() = incomplete;
+    assert_eq!(session.may_open(), Ok(()));
+    assert_eq!(session.may_write(), Ok(()));
+    assert_eq!(session.may_build(), Err(Refused::SetupIncomplete));
+}
